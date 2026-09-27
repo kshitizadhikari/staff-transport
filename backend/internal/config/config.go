@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -23,6 +24,8 @@ type Config struct {
 	RefreshTokenTTL  time.Duration
 
 	OrgTimezone string
+
+	CORSAllowedOrigins []string
 
 	GoogleMapsAPIKey string
 	ExpoAccessToken  string
@@ -55,6 +58,8 @@ func Load() (*Config, error) {
 
 		OrgTimezone: env("ORG_TIMEZONE", "UTC"),
 
+		CORSAllowedOrigins: splitList(env("CORS_ALLOWED_ORIGINS", "")),
+
 		GoogleMapsAPIKey: env("GOOGLE_MAPS_API_KEY", ""),
 		ExpoAccessToken:  env("EXPO_ACCESS_TOKEN", ""),
 	}
@@ -81,6 +86,12 @@ func (c *Config) validate() error {
 	if c.JWTRefreshSecret == "" {
 		c.JWTRefreshSecret = "development-refresh-secret"
 	}
+	if len(c.CORSAllowedOrigins) == 0 {
+		if c.IsProduction() {
+			return fmt.Errorf("CORS_ALLOWED_ORIGINS is required in production")
+		}
+		c.CORSAllowedOrigins = []string{"http://localhost:3000"}
+	}
 	if _, err := time.LoadLocation(c.OrgTimezone); err != nil {
 		return fmt.Errorf("invalid ORG_TIMEZONE %q: %w", c.OrgTimezone, err)
 	}
@@ -101,6 +112,16 @@ func env(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func splitList(raw string) []string {
+	var out []string
+	for _, part := range strings.Split(raw, ",") {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
 }
 
 func durationEnv(key string, fallback time.Duration) (time.Duration, error) {

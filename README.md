@@ -284,5 +284,10 @@ Implemented so far:
 - backend health/readiness endpoints, GORM + Redis wiring
 - authentication API: `POST /api/v1/auth/login`, `/refresh`, `/logout`, `GET /api/v1/me`
 - manager account seeding via `make seed-manager`
+- web login screen, authenticated home, and CORS support for the web origin
 
-Next: web login screen, then manager-facing staff/driver/vehicle management.
+Known limitation: the web session lives in memory, so a full page reload at
+`/` currently requires signing in again. Persistent sessions (httpOnly refresh
+cookie) and the driver mobile auth flow are not implemented yet.
+
+Next: manager-facing staff/driver/vehicle management.

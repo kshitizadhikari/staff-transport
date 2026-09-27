@@ -34,7 +34,7 @@ func New(cfg *config.Config, db *gorm.DB, rdb *goredis.Client, authSvc auth.Serv
 		users: usersSvc,
 		gin:   gin.New(),
 	}
-	s.gin.Use(gin.Recovery(), requestLogger())
+	s.gin.Use(gin.Recovery(), corsMiddleware(cfg.CORSAllowedOrigins), requestLogger())
 	s.registerRoutes()
 	return s
 }

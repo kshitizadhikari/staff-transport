@@ -97,6 +97,10 @@ curl -s localhost:8080/api/v1/auth/login \
 pnpm --filter web dev     # http://localhost:3000
 ```
 
+Sign in at http://localhost:3000/login with the seeded manager account
+(default `manager@example.com` / `changeme123`). Unauthenticated visits to
+`/` are redirected to the login page.
+
 ## 7. Run the driver mobile app
 
 ```bash

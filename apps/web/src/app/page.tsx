@@ -2,7 +2,9 @@
 
 import { useQuery } from "@tanstack/react-query";
 
+import { RequireAuth } from "@/components/require-auth";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -11,10 +13,11 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { apiFetch } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 
 type HealthResponse = { status: string };
 
-const experiences = [
+const workspaces = [
   {
     title: "Manager",
     description:
@@ -32,7 +35,9 @@ const experiences = [
   },
 ];
 
-export default function Home() {
+function Dashboard() {
+  const { user, logout } = useAuth();
+
   const health = useQuery({
     queryKey: ["health"],
     queryFn: () => apiFetch<HealthResponse>("/health"),
@@ -41,11 +46,16 @@ export default function Home() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-4xl flex-col gap-8 px-6 py-16">
-      <header className="flex flex-col gap-3">
-        <div className="flex items-center gap-3">
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div className="flex flex-col gap-1">
           <h1 className="text-3xl font-semibold tracking-tight">
             Staff Transport
           </h1>
+          <p className="text-muted-foreground">
+            Signed in as {user?.name} · {user?.role}
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
           <Badge variant={health.isSuccess ? "default" : "secondary"}>
             {health.isSuccess
               ? "API online"
@@ -53,19 +63,18 @@ export default function Home() {
                 ? "API offline"
                 : "Checking API"}
           </Badge>
+          <Button variant="outline" onClick={() => void logout()}>
+            Sign out
+          </Button>
         </div>
-        <p className="text-muted-foreground">
-          Manager-driven transport operations. This is the initial application
-          shell.
-        </p>
       </header>
 
       <div className="grid gap-4 sm:grid-cols-3">
-        {experiences.map((experience) => (
-          <Card key={experience.title}>
+        {workspaces.map((workspace) => (
+          <Card key={workspace.title}>
             <CardHeader>
-              <CardTitle>{experience.title}</CardTitle>
-              <CardDescription>{experience.description}</CardDescription>
+              <CardTitle>{workspace.title}</CardTitle>
+              <CardDescription>{workspace.description}</CardDescription>
             </CardHeader>
           </Card>
         ))}
@@ -75,15 +84,26 @@ export default function Home() {
         <CardHeader>
           <CardTitle>Getting started</CardTitle>
           <CardDescription>
-            Start local infrastructure and the API, then build features in the
-            order documented in docs/DEVELOPMENT.md.
+            Authentication is in place. Next up: manager staff, driver, and
+            vehicle management.
           </CardDescription>
         </CardHeader>
         <CardContent className="text-sm text-muted-foreground">
-          <code className="rounded bg-muted px-1.5 py-0.5">make infra-up</code>{" "}
-          then <code className="rounded bg-muted px-1.5 py-0.5">make backend-run</code>
+          Seed a manager account with{" "}
+          <code className="rounded bg-muted px-1.5 py-0.5">
+            make seed-manager
+          </code>{" "}
+          and sign in.
         </CardContent>
       </Card>
     </main>
+  );
+}
+
+export default function Home() {
+  return (
+    <RequireAuth>
+      <Dashboard />
+    </RequireAuth>
   );
 }
