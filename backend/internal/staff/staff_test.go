@@ -40,6 +40,15 @@ func (f *fakeRepo) Get(_ context.Context, id string) (*Staff, error) {
 	return nil, ErrNotFound
 }
 
+func (f *fakeRepo) FindByUserID(_ context.Context, userID string) (*Staff, error) {
+	for i := range f.items {
+		if f.items[i].UserID == userID {
+			return &f.items[i], nil
+		}
+	}
+	return nil, ErrNotFound
+}
+
 func (f *fakeRepo) Create(_ context.Context, in CreateInput, passwordHash *string) (*Staff, error) {
 	if f.createErr != nil {
 		return nil, f.createErr

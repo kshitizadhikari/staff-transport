@@ -77,6 +77,7 @@ type ListFilter struct {
 type Repository interface {
 	List(ctx context.Context, f ListFilter) ([]Driver, int64, error)
 	Get(ctx context.Context, id string) (*Driver, error)
+	FindByUserID(ctx context.Context, userID string) (*Driver, error)
 	Create(ctx context.Context, in CreateInput, passwordHash *string) (*Driver, error)
 	Update(ctx context.Context, id string, in UpdateInput) (*Driver, error)
 }
@@ -165,6 +166,23 @@ func (r *gormRepository) Get(ctx context.Context, id string) (*Driver, error) {
 		Select(driverSelect).
 		Joins("JOIN users u ON u.id = d.user_id").
 		Where("d.id = ?", id).
+		Take(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return row.toDriver(), nil
+}
+
+func (r *gormRepository) FindByUserID(ctx context.Context, userID string) (*Driver, error) {
+	var row driverRow
+	err := r.db.WithContext(ctx).
+		Table("drivers AS d").
+		Select(driverSelect).
+		Joins("JOIN users u ON u.id = d.user_id").
+		Where("d.user_id = ?", userID).
 		Take(&row).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrNotFound
@@ -290,6 +308,14 @@ func (s *Service) List(ctx context.Context, f ListFilter) ([]Driver, int64, erro
 // Get loads a single driver profile.
 func (s *Service) Get(ctx context.Context, id string) (*Driver, error) {
 	return s.repo.Get(ctx, id)
+}
+
+// FindByUserID loads the driver profile linked to a user account.
+func (s *Service) FindByUserID(ctx context.Context, userID string) (*Driver, error) {
+	if strings.TrimSpace(userID) == "" {
+		return nil, ErrNotFound
+	}
+	return s.repo.FindByUserID(ctx, userID)
 }
 
 // Create provisions a driver account and profile. A blank password leaves the

@@ -25,6 +25,7 @@ type fakeRepo struct {
 	lastUpdate       *UpdateInput
 	lastUpdateStatus string
 	cancelled        string
+	lastAction       string
 }
 
 func newFakeRepo(trips ...*Trip) *fakeRepo {
@@ -67,6 +68,106 @@ func (f *fakeRepo) Cancel(_ context.Context, id, _ string) error {
 	return nil
 }
 
+func (f *fakeRepo) ListForStaff(_ context.Context, _ string, filter ListFilter) ([]Trip, int64, error) {
+	return f.List(context.Background(), filter)
+}
+
+func (f *fakeRepo) StartTrip(ctx context.Context, tripID, _ string) (*Trip, error) {
+	t, err := f.Get(ctx, tripID)
+	if err != nil {
+		return nil, err
+	}
+	if t.Status == StatusInProgress {
+		return t, nil
+	}
+	if t.Status != StatusAssigned {
+		return nil, ErrInvalidTransition
+	}
+	f.lastAction = "start"
+	t.Status = StatusInProgress
+	return t, nil
+}
+
+func (f *fakeRepo) CompleteTrip(ctx context.Context, tripID, _ string) (*Trip, error) {
+	t, err := f.Get(ctx, tripID)
+	if err != nil {
+		return nil, err
+	}
+	if t.Status == StatusCompleted {
+		return t, nil
+	}
+	if t.Status != StatusInProgress {
+		return nil, ErrInvalidTransition
+	}
+	f.lastAction = "complete"
+	t.Status = StatusCompleted
+	return t, nil
+}
+
+func (f *fakeRepo) ArriveStop(ctx context.Context, tripID, stopID, _ string) (*Trip, error) {
+	return f.execStop(ctx, tripID, stopID, StopArrived)
+}
+
+func (f *fakeRepo) DepartStop(ctx context.Context, tripID, stopID, _ string) (*Trip, error) {
+	return f.execStop(ctx, tripID, stopID, StopDeparted)
+}
+
+func (f *fakeRepo) execStop(ctx context.Context, tripID, stopID, status string) (*Trip, error) {
+	t, err := f.Get(ctx, tripID)
+	if err != nil {
+		return nil, err
+	}
+	if t.Status != StatusInProgress {
+		return nil, ErrInvalidTransition
+	}
+	for i := range t.Stops {
+		if t.Stops[i].ID == stopID {
+			if t.Stops[i].Status == status {
+				return t, nil
+			}
+			if status == StopDeparted && t.Stops[i].Status != StopArrived {
+				return nil, ErrInvalidTransition
+			}
+			t.Stops[i].Status = status
+			f.lastAction = "stop:" + status
+			return t, nil
+		}
+	}
+	return nil, ErrStopNotFound
+}
+
+func (f *fakeRepo) PickupPassenger(ctx context.Context, tripID, passengerID, _ string) (*Trip, error) {
+	return f.execPassenger(ctx, tripID, passengerID, PassengerPickedUp)
+}
+
+func (f *fakeRepo) NoShowPassenger(ctx context.Context, tripID, passengerID, _ string) (*Trip, error) {
+	return f.execPassenger(ctx, tripID, passengerID, PassengerNoShow)
+}
+
+func (f *fakeRepo) execPassenger(ctx context.Context, tripID, passengerID, status string) (*Trip, error) {
+	t, err := f.Get(ctx, tripID)
+	if err != nil {
+		return nil, err
+	}
+	if t.Status != StatusInProgress {
+		return nil, ErrInvalidTransition
+	}
+	for i := range t.Passengers {
+		if t.Passengers[i].ID == passengerID {
+			if t.Passengers[i].Status == status {
+				return t, nil
+			}
+			if t.Passengers[i].Status != PassengerAssigned {
+				return nil, ErrInvalidTransition
+			}
+			t.Passengers[i].Status = status
+			f.lastAction = "passenger:" + status
+			return t, nil
+		}
+	}
+	return nil, ErrPassengerNotFound
+}
+
 func (f *fakeRepo) EventExists(_ context.Context, _ string) (bool, error) {
 	return f.eventExists, nil
 }
@@ -74,6 +175,8 @@ func (f *fakeRepo) EventExists(_ context.Context, _ string) (bool, error) {
 type fakeDrivers struct {
 	status string
 	err    error
+	id     string
+	userID string
 }
 
 func (f fakeDrivers) Get(_ context.Context, id string) (*drivers.Driver, error) {
@@ -81,6 +184,16 @@ func (f fakeDrivers) Get(_ context.Context, id string) (*drivers.Driver, error) 
 		return nil, f.err
 	}
 	return &drivers.Driver{ID: id, Status: f.status}, nil
+}
+
+func (f fakeDrivers) FindByUserID(_ context.Context, userID string) (*drivers.Driver, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	if f.userID == "" || f.userID != userID {
+		return nil, drivers.ErrNotFound
+	}
+	return &drivers.Driver{ID: f.id, Status: f.status}, nil
 }
 
 type fakeVehicles struct {
@@ -99,6 +212,8 @@ func (f fakeVehicles) Get(_ context.Context, id string) (*vehicles.Vehicle, erro
 type fakeStaff struct {
 	active bool
 	err    error
+	id     string
+	userID string
 }
 
 func (f fakeStaff) Get(_ context.Context, id string) (*staff.Staff, error) {
@@ -106,6 +221,16 @@ func (f fakeStaff) Get(_ context.Context, id string) (*staff.Staff, error) {
 		return nil, f.err
 	}
 	return &staff.Staff{ID: id, Active: f.active}, nil
+}
+
+func (f fakeStaff) FindByUserID(_ context.Context, userID string) (*staff.Staff, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	if f.userID == "" || f.userID != userID {
+		return nil, staff.ErrNotFound
+	}
+	return &staff.Staff{ID: f.id, Active: f.active}, nil
 }
 
 func ptr(s string) *string { return &s }
@@ -330,5 +455,151 @@ func TestCancelTripHandler(t *testing.T) {
 	w := perform(r, http.MethodPost, "/api/v1/trips/t1/cancel", "", "manager-token")
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("expected 204, got %d", w.Code)
+	}
+}
+
+func executionService(repo *fakeRepo) *Service {
+	return NewService(repo,
+		fakeDrivers{id: "d1", userID: "driver-user", status: drivers.StatusAvailable},
+		fakeVehicles{capacity: 4, status: vehicles.StatusAvailable},
+		fakeStaff{id: "s1", userID: "staff-user", active: true},
+		"UTC")
+}
+
+func TestAuthorizeDriverRejectsOtherDriver(t *testing.T) {
+	repo := newFakeRepo(&Trip{ID: "t1", Status: StatusAssigned, DriverID: ptr("d1")})
+	svc := executionService(repo)
+
+	if _, err := svc.StartTrip(context.Background(), "t1", "someone-else"); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("expected ErrForbidden, got %v", err)
+	}
+}
+
+func TestStartTrip(t *testing.T) {
+	repo := newFakeRepo(&Trip{ID: "t1", Status: StatusAssigned, DriverID: ptr("d1")})
+	svc := executionService(repo)
+
+	trip, err := svc.StartTrip(context.Background(), "t1", "driver-user")
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	if trip.Status != StatusInProgress || repo.lastAction != "start" {
+		t.Fatalf("expected in_progress/start, got %q/%q", trip.Status, repo.lastAction)
+	}
+}
+
+func TestStartTripRequiresAssignedState(t *testing.T) {
+	repo := newFakeRepo(&Trip{ID: "t1", Status: StatusScheduled, DriverID: ptr("d1")})
+	svc := executionService(repo)
+
+	if _, err := svc.StartTrip(context.Background(), "t1", "driver-user"); !errors.Is(err, ErrInvalidTransition) {
+		t.Fatalf("expected ErrInvalidTransition, got %v", err)
+	}
+}
+
+func TestCompleteTripIdempotent(t *testing.T) {
+	repo := newFakeRepo(&Trip{ID: "t1", Status: StatusCompleted, DriverID: ptr("d1")})
+	svc := executionService(repo)
+
+	trip, err := svc.CompleteTrip(context.Background(), "t1", "driver-user")
+	if err != nil {
+		t.Fatalf("complete: %v", err)
+	}
+	if trip.Status != StatusCompleted || repo.lastAction != "" {
+		t.Fatalf("expected idempotent complete, got %q/%q", trip.Status, repo.lastAction)
+	}
+}
+
+func TestStopExecution(t *testing.T) {
+	repo := newFakeRepo(&Trip{
+		ID:         "t1",
+		Status:     StatusInProgress,
+		DriverID:   ptr("d1"),
+		Stops:      []Stop{{ID: "s1", Status: StopPending}},
+		Passengers: []Passenger{{ID: "p1", StaffID: "s1", Status: PassengerAssigned}},
+	})
+	svc := executionService(repo)
+	ctx := context.Background()
+
+	if _, err := svc.DepartStop(ctx, "t1", "s1", "driver-user"); !errors.Is(err, ErrInvalidTransition) {
+		t.Fatalf("expected ErrInvalidTransition departing pending stop, got %v", err)
+	}
+	arrived, err := svc.ArriveStop(ctx, "t1", "s1", "driver-user")
+	if err != nil || arrived.Stops[0].Status != StopArrived {
+		t.Fatalf("arrive: %v status=%q", err, arrived.Stops[0].Status)
+	}
+	departed, err := svc.DepartStop(ctx, "t1", "s1", "driver-user")
+	if err != nil || departed.Stops[0].Status != StopDeparted {
+		t.Fatalf("depart: %v status=%q", err, departed.Stops[0].Status)
+	}
+	if _, err := svc.ArriveStop(ctx, "t1", "missing", "driver-user"); !errors.Is(err, ErrStopNotFound) {
+		t.Fatalf("expected ErrStopNotFound, got %v", err)
+	}
+}
+
+func TestPassengerExecution(t *testing.T) {
+	repo := newFakeRepo(&Trip{
+		ID:         "t1",
+		Status:     StatusInProgress,
+		DriverID:   ptr("d1"),
+		Passengers: []Passenger{{ID: "p1", StaffID: "s1", Status: PassengerAssigned}},
+	})
+	svc := executionService(repo)
+	ctx := context.Background()
+
+	picked, err := svc.PickupPassenger(ctx, "t1", "p1", "driver-user")
+	if err != nil || picked.Passengers[0].Status != PassengerPickedUp {
+		t.Fatalf("pickup: %v status=%q", err, picked.Passengers[0].Status)
+	}
+	if _, err := svc.NoShowPassenger(ctx, "t1", "p1", "driver-user"); !errors.Is(err, ErrInvalidTransition) {
+		t.Fatalf("expected ErrInvalidTransition for picked-up passenger no-show, got %v", err)
+	}
+	if _, err := svc.PickupPassenger(ctx, "t1", "missing", "driver-user"); !errors.Is(err, ErrPassengerNotFound) {
+		t.Fatalf("expected ErrPassengerNotFound, got %v", err)
+	}
+}
+
+func TestMyTrips(t *testing.T) {
+	repo := newFakeRepo(&Trip{ID: "t1", DriverID: ptr("d1")})
+	svc := executionService(repo)
+	ctx := context.Background()
+
+	if _, _, err := svc.MyTrips(ctx, "driver-user", "driver", ListFilter{}, ""); err != nil {
+		t.Fatalf("driver my trips: %v", err)
+	}
+	if _, _, err := svc.MyTrips(ctx, "staff-user", "staff", ListFilter{}, ""); err != nil {
+		t.Fatalf("staff my trips: %v", err)
+	}
+	if _, _, err := svc.MyTrips(ctx, "m1", "manager", ListFilter{}, ""); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("expected ErrForbidden for manager, got %v", err)
+	}
+}
+
+func newExecutionRouter(repo *fakeRepo, claims map[string]*auth.Claims) *gin.Engine {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	NewHandler(executionService(repo), fakeAuth{claims: claims}).RegisterRoutes(r.Group("/api/v1"))
+	return r
+}
+
+func TestExecutionRoutesAuthorization(t *testing.T) {
+	repo := newFakeRepo(&Trip{ID: "t1", Status: StatusAssigned, DriverID: ptr("d1")})
+	claims := map[string]*auth.Claims{
+		"driver-token":  {UserID: "driver-user", Role: "driver"},
+		"manager-token": {UserID: "m1", Role: "manager"},
+	}
+	r := newExecutionRouter(repo, claims)
+
+	if w := perform(r, http.MethodPost, "/api/v1/trips/t1/start", "", ""); w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", w.Code)
+	}
+	if w := perform(r, http.MethodPost, "/api/v1/trips/t1/start", "", "manager-token"); w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for manager, got %d", w.Code)
+	}
+	if w := perform(r, http.MethodPost, "/api/v1/trips/t1/start", "", "driver-token"); w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for driver, got %d: %s", w.Code, w.Body.String())
+	}
+	if w := perform(r, http.MethodGet, "/api/v1/me/trips", "", "driver-token"); w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for /me/trips, got %d", w.Code)
 	}
 }

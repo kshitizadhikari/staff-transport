@@ -13,6 +13,7 @@ import (
 	"staff-transport/internal/audit"
 	"staff-transport/internal/drivers"
 	"staff-transport/internal/staff"
+	"staff-transport/internal/users"
 	"staff-transport/internal/vehicles"
 )
 
@@ -80,6 +81,10 @@ var (
 	ErrStaffInactive        = errors.New("staff member is not active")
 	ErrCapacityExceeded     = errors.New("passenger count exceeds vehicle capacity")
 	ErrEventNotFound        = errors.New("event not found")
+	ErrForbidden            = errors.New("not permitted for this trip")
+	ErrInvalidTransition    = errors.New("action not allowed in the trip's current state")
+	ErrStopNotFound         = errors.New("stop not found on this trip")
+	ErrPassengerNotFound    = errors.New("passenger not found on this trip")
 )
 
 // Stop is an ordered trip stop.
@@ -179,11 +184,21 @@ type ListFilter struct {
 // Repository persists trips, their stops, passengers, and audit records.
 type Repository interface {
 	List(ctx context.Context, f ListFilter) ([]Trip, int64, error)
+	ListForStaff(ctx context.Context, staffID string, f ListFilter) ([]Trip, int64, error)
 	Get(ctx context.Context, id string) (*Trip, error)
 	Create(ctx context.Context, in CreateInput, status, actorID string) (*Trip, error)
 	Update(ctx context.Context, id string, in UpdateInput, status, actorID string) (*Trip, error)
 	Cancel(ctx context.Context, id, actorID string) error
 	EventExists(ctx context.Context, id string) (bool, error)
+
+	// Driver execution transitions. Each is idempotent and returns the current
+	// trip. Callers must authorize that the actor is the assigned driver.
+	StartTrip(ctx context.Context, tripID, actorID string) (*Trip, error)
+	CompleteTrip(ctx context.Context, tripID, actorID string) (*Trip, error)
+	ArriveStop(ctx context.Context, tripID, stopID, actorID string) (*Trip, error)
+	DepartStop(ctx context.Context, tripID, stopID, actorID string) (*Trip, error)
+	PickupPassenger(ctx context.Context, tripID, passengerID, actorID string) (*Trip, error)
+	NoShowPassenger(ctx context.Context, tripID, passengerID, actorID string) (*Trip, error)
 }
 
 type tripRow struct {
@@ -289,6 +304,46 @@ func (r *gormRepository) List(ctx context.Context, f ListFilter) ([]Trip, int64,
 	if err := query().
 		Select(tripSelect).
 		Order("t.scheduled_start_at DESC").
+		Limit(f.Limit).
+		Offset(f.Offset).
+		Scan(&rows).Error; err != nil {
+		return nil, 0, err
+	}
+
+	out := make([]Trip, 0, len(rows))
+	for i := range rows {
+		out = append(out, *rows[i].toTrip())
+	}
+	return out, total, nil
+}
+
+func (r *gormRepository) ListForStaff(ctx context.Context, staffID string, f ListFilter) ([]Trip, int64, error) {
+	query := func() *gorm.DB {
+		q := r.db.WithContext(ctx).
+			Table("trips AS t").
+			Joins(tripJoins).
+			Joins("JOIN trip_passengers tp ON tp.trip_id = t.id AND tp.staff_id = ?", staffID)
+		if f.Status != "" {
+			q = q.Where("t.status = ?", f.Status)
+		}
+		if f.From != nil {
+			q = q.Where("t.scheduled_start_at >= ?", *f.From)
+		}
+		if f.To != nil {
+			q = q.Where("t.scheduled_start_at < ?", *f.To)
+		}
+		return q
+	}
+
+	var total int64
+	if err := query().Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	var rows []tripRow
+	if err := query().
+		Select(tripSelect).
+		Order("t.scheduled_start_at ASC").
 		Limit(f.Limit).
 		Offset(f.Offset).
 		Scan(&rows).Error; err != nil {
@@ -618,9 +673,210 @@ func (r *gormRepository) Cancel(ctx context.Context, id, actorID string) error {
 	})
 }
 
+func (r *gormRepository) StartTrip(ctx context.Context, tripID, actorID string) (*Trip, error) {
+	trip, err := r.Get(ctx, tripID)
+	if err != nil {
+		return nil, err
+	}
+	if trip.Status == StatusInProgress {
+		return trip, nil
+	}
+	if trip.Status != StatusAssigned {
+		return nil, ErrInvalidTransition
+	}
+
+	now := time.Now().UTC()
+	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		res := tx.Table("trips").
+			Where("id = ? AND status = ?", tripID, StatusAssigned).
+			Updates(map[string]any{"status": StatusInProgress, "started_at": now, "updated_at": now})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return ErrInvalidTransition
+		}
+		return audit.Record(ctx, tx, audit.Entry{
+			ActorUserID: audit.StrPtr(actorID),
+			Action:      "trip.started",
+			EntityType:  "trip",
+			EntityID:    &tripID,
+		})
+	})
+	if err != nil {
+		return nil, err
+	}
+	return r.Get(ctx, tripID)
+}
+
+func (r *gormRepository) CompleteTrip(ctx context.Context, tripID, actorID string) (*Trip, error) {
+	trip, err := r.Get(ctx, tripID)
+	if err != nil {
+		return nil, err
+	}
+	if trip.Status == StatusCompleted {
+		return trip, nil
+	}
+	if trip.Status != StatusInProgress {
+		return nil, ErrInvalidTransition
+	}
+
+	now := time.Now().UTC()
+	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		res := tx.Table("trips").
+			Where("id = ? AND status = ?", tripID, StatusInProgress).
+			Updates(map[string]any{"status": StatusCompleted, "completed_at": now, "updated_at": now})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return ErrInvalidTransition
+		}
+		return audit.Record(ctx, tx, audit.Entry{
+			ActorUserID: audit.StrPtr(actorID),
+			Action:      "trip.completed",
+			EntityType:  "trip",
+			EntityID:    &tripID,
+		})
+	})
+	if err != nil {
+		return nil, err
+	}
+	return r.Get(ctx, tripID)
+}
+
+func (r *gormRepository) ArriveStop(ctx context.Context, tripID, stopID, actorID string) (*Trip, error) {
+	return r.setStopStatus(ctx, tripID, stopID, actorID, StopArrived)
+}
+
+func (r *gormRepository) DepartStop(ctx context.Context, tripID, stopID, actorID string) (*Trip, error) {
+	return r.setStopStatus(ctx, tripID, stopID, actorID, StopDeparted)
+}
+
+func (r *gormRepository) setStopStatus(ctx context.Context, tripID, stopID, actorID, status string) (*Trip, error) {
+	trip, err := r.Get(ctx, tripID)
+	if err != nil {
+		return nil, err
+	}
+	if trip.Status != StatusInProgress {
+		return nil, ErrInvalidTransition
+	}
+
+	stop := findStop(trip, stopID)
+	if stop == nil {
+		return nil, ErrStopNotFound
+	}
+	if stop.Status == status {
+		return trip, nil
+	}
+	if status == StopDeparted && stop.Status != StopArrived {
+		return nil, ErrInvalidTransition
+	}
+	if status == StopArrived && stop.Status != StopPending {
+		return trip, nil
+	}
+
+	now := time.Now().UTC()
+	updates := map[string]any{"status": status, "updated_at": now}
+	if status == StopArrived {
+		updates["arrived_at"] = now
+	} else {
+		updates["departed_at"] = now
+	}
+
+	res := r.db.WithContext(ctx).
+		Table("trip_stops").
+		Where("id = ? AND trip_id = ? AND status = ?", stopID, tripID, stop.Status).
+		Updates(updates)
+	if res.Error != nil {
+		return nil, res.Error
+	}
+	return r.Get(ctx, tripID)
+}
+
+func (r *gormRepository) PickupPassenger(ctx context.Context, tripID, passengerID, actorID string) (*Trip, error) {
+	return r.setPassengerStatus(ctx, tripID, passengerID, actorID, PassengerPickedUp)
+}
+
+func (r *gormRepository) NoShowPassenger(ctx context.Context, tripID, passengerID, actorID string) (*Trip, error) {
+	return r.setPassengerStatus(ctx, tripID, passengerID, actorID, PassengerNoShow)
+}
+
+func (r *gormRepository) setPassengerStatus(ctx context.Context, tripID, passengerID, actorID, status string) (*Trip, error) {
+	trip, err := r.Get(ctx, tripID)
+	if err != nil {
+		return nil, err
+	}
+	if trip.Status != StatusInProgress {
+		return nil, ErrInvalidTransition
+	}
+
+	passenger := findPassenger(trip, passengerID)
+	if passenger == nil {
+		return nil, ErrPassengerNotFound
+	}
+	if passenger.Status == status {
+		return trip, nil
+	}
+	if passenger.Status != PassengerAssigned {
+		return nil, ErrInvalidTransition
+	}
+
+	now := time.Now().UTC()
+	updates := map[string]any{"status": status, "updated_at": now}
+	action := "trip.passenger_picked_up"
+	if status == PassengerPickedUp {
+		updates["picked_up_at"] = now
+	} else {
+		action = "trip.passenger_no_show"
+	}
+
+	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		res := tx.Table("trip_passengers").
+			Where("id = ? AND trip_id = ? AND status = ?", passengerID, tripID, PassengerAssigned).
+			Updates(updates)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return ErrInvalidTransition
+		}
+		return audit.Record(ctx, tx, audit.Entry{
+			ActorUserID: audit.StrPtr(actorID),
+			Action:      action,
+			EntityType:  "trip",
+			EntityID:    &tripID,
+			Metadata:    map[string]any{"passenger_id": passengerID, "staff_id": passenger.StaffID},
+		})
+	})
+	if err != nil {
+		return nil, err
+	}
+	return r.Get(ctx, tripID)
+}
+
+func findStop(trip *Trip, stopID string) *Stop {
+	for i := range trip.Stops {
+		if trip.Stops[i].ID == stopID {
+			return &trip.Stops[i]
+		}
+	}
+	return nil
+}
+
+func findPassenger(trip *Trip, passengerID string) *Passenger {
+	for i := range trip.Passengers {
+		if trip.Passengers[i].ID == passengerID {
+			return &trip.Passengers[i]
+		}
+	}
+	return nil
+}
+
 // DriverReader reads driver profiles for validation.
 type DriverReader interface {
 	Get(ctx context.Context, id string) (*drivers.Driver, error)
+	FindByUserID(ctx context.Context, userID string) (*drivers.Driver, error)
 }
 
 // VehicleReader reads vehicle records for validation.
@@ -631,6 +887,7 @@ type VehicleReader interface {
 // StaffReader reads staff profiles for validation.
 type StaffReader interface {
 	Get(ctx context.Context, id string) (*staff.Staff, error)
+	FindByUserID(ctx context.Context, userID string) (*staff.Staff, error)
 }
 
 // Service holds trip business behavior.
@@ -784,6 +1041,111 @@ func (s *Service) Cancel(ctx context.Context, id, actorID string) error {
 		return nil
 	}
 	return s.repo.Cancel(ctx, id, actorID)
+}
+
+// MyTrips returns the caller's own transportation: trips assigned to them as a
+// driver, or trips they are a passenger on as a staff member.
+func (s *Service) MyTrips(ctx context.Context, userID, role string, f ListFilter, date string) ([]Trip, int64, error) {
+	if f.Status != "" && !ValidStatus(f.Status) {
+		return nil, 0, ErrInvalidStatus
+	}
+	if date != "" {
+		from, to, err := s.dayRange(date)
+		if err != nil {
+			return nil, 0, err
+		}
+		f.From, f.To = from, to
+	}
+
+	switch role {
+	case string(users.RoleDriver):
+		driver, err := s.drivers.FindByUserID(ctx, userID)
+		if errors.Is(err, drivers.ErrNotFound) {
+			return []Trip{}, 0, nil
+		}
+		if err != nil {
+			return nil, 0, err
+		}
+		f.DriverID = driver.ID
+		return s.repo.List(ctx, f)
+	case string(users.RoleStaff):
+		member, err := s.staff.FindByUserID(ctx, userID)
+		if errors.Is(err, staff.ErrNotFound) {
+			return []Trip{}, 0, nil
+		}
+		if err != nil {
+			return nil, 0, err
+		}
+		return s.repo.ListForStaff(ctx, member.ID, f)
+	default:
+		return nil, 0, ErrForbidden
+	}
+}
+
+// StartTrip begins execution of a trip the caller is assigned to.
+func (s *Service) StartTrip(ctx context.Context, tripID, userID string) (*Trip, error) {
+	if err := s.authorizeDriver(ctx, tripID, userID); err != nil {
+		return nil, err
+	}
+	return s.repo.StartTrip(ctx, tripID, userID)
+}
+
+// CompleteTrip finishes execution of a trip the caller is assigned to.
+func (s *Service) CompleteTrip(ctx context.Context, tripID, userID string) (*Trip, error) {
+	if err := s.authorizeDriver(ctx, tripID, userID); err != nil {
+		return nil, err
+	}
+	return s.repo.CompleteTrip(ctx, tripID, userID)
+}
+
+// ArriveStop records the caller's arrival at a stop.
+func (s *Service) ArriveStop(ctx context.Context, tripID, stopID, userID string) (*Trip, error) {
+	if err := s.authorizeDriver(ctx, tripID, userID); err != nil {
+		return nil, err
+	}
+	return s.repo.ArriveStop(ctx, tripID, stopID, userID)
+}
+
+// DepartStop records the caller's departure from a stop.
+func (s *Service) DepartStop(ctx context.Context, tripID, stopID, userID string) (*Trip, error) {
+	if err := s.authorizeDriver(ctx, tripID, userID); err != nil {
+		return nil, err
+	}
+	return s.repo.DepartStop(ctx, tripID, stopID, userID)
+}
+
+// PickupPassenger marks a passenger as picked up.
+func (s *Service) PickupPassenger(ctx context.Context, tripID, passengerID, userID string) (*Trip, error) {
+	if err := s.authorizeDriver(ctx, tripID, userID); err != nil {
+		return nil, err
+	}
+	return s.repo.PickupPassenger(ctx, tripID, passengerID, userID)
+}
+
+// NoShowPassenger marks a passenger as a no-show.
+func (s *Service) NoShowPassenger(ctx context.Context, tripID, passengerID, userID string) (*Trip, error) {
+	if err := s.authorizeDriver(ctx, tripID, userID); err != nil {
+		return nil, err
+	}
+	return s.repo.NoShowPassenger(ctx, tripID, passengerID, userID)
+}
+
+func (s *Service) authorizeDriver(ctx context.Context, tripID, userID string) error {
+	trip, err := s.repo.Get(ctx, tripID)
+	if err != nil {
+		return err
+	}
+	driver, err := s.drivers.FindByUserID(ctx, userID)
+	if errors.Is(err, drivers.ErrNotFound) {
+		return ErrForbidden
+	}
+	if err != nil {
+		return err
+	}
+	if trip.DriverID == nil || *trip.DriverID != driver.ID {
+		return ErrForbidden
+	}
+	return nil
 }
 
 func (s *Service) validatePassengers(ctx context.Context, passengers []PassengerInput, stopCount int) error {

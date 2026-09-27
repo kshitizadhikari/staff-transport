@@ -297,6 +297,12 @@ Implemented so far:
   - ordered stops, passenger assignment, driver/vehicle assignment
   - capacity and assignment validation; organization-timezone date filtering
   - audit records for creation, updates, cancellation, and assignment changes
+- driver trip execution API (assigned driver only; transitions are idempotent):
+  - `GET /api/v1/me/trips` (driver's assigned trips or staff's own transportation)
+  - `POST /api/v1/trips/:id/start`, `POST /api/v1/trips/:id/complete`
+  - `POST /api/v1/trips/:id/stops/:stopId/arrive|depart`
+  - `POST /api/v1/trips/:id/passengers/:passengerId/pickup|no-show`
+  - audit records for start, completion, pickup, and no-show
 
 Known limitations:
 
@@ -305,8 +311,8 @@ Known limitations:
 - trip stops cannot be replaced after creation (cancel and recreate); driver and
   vehicle double-booking detection and geocoded stop coordinates are not
   implemented yet
+- location ingestion and push notifications are not implemented yet
 - persistent sessions (httpOnly refresh cookie) and the driver mobile auth flow
   are not implemented yet
 
-Next: driver trip execution (start trip, stop arrival/departure, passenger
-pickup/no-show, complete trip) and manager trip UI.
+Next: driver mobile execution UI, manager trip UI, and location ingestion.

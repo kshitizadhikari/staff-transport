@@ -72,6 +72,7 @@ type ListFilter struct {
 type Repository interface {
 	List(ctx context.Context, f ListFilter) ([]Staff, int64, error)
 	Get(ctx context.Context, id string) (*Staff, error)
+	FindByUserID(ctx context.Context, userID string) (*Staff, error)
 	Create(ctx context.Context, in CreateInput, passwordHash *string) (*Staff, error)
 	Update(ctx context.Context, id string, in UpdateInput) (*Staff, error)
 }
@@ -164,6 +165,23 @@ func (r *gormRepository) Get(ctx context.Context, id string) (*Staff, error) {
 		Select(staffSelect).
 		Joins("JOIN users u ON u.id = s.user_id").
 		Where("s.id = ?", id).
+		Take(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return row.toStaff(), nil
+}
+
+func (r *gormRepository) FindByUserID(ctx context.Context, userID string) (*Staff, error) {
+	var row staffRow
+	err := r.db.WithContext(ctx).
+		Table("staff AS s").
+		Select(staffSelect).
+		Joins("JOIN users u ON u.id = s.user_id").
+		Where("s.user_id = ?", userID).
 		Take(&row).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrNotFound
@@ -287,6 +305,14 @@ func (s *Service) List(ctx context.Context, f ListFilter) ([]Staff, int64, error
 // Get loads a single staff profile.
 func (s *Service) Get(ctx context.Context, id string) (*Staff, error) {
 	return s.repo.Get(ctx, id)
+}
+
+// FindByUserID loads the staff profile linked to a user account.
+func (s *Service) FindByUserID(ctx context.Context, userID string) (*Staff, error) {
+	if strings.TrimSpace(userID) == "" {
+		return nil, ErrNotFound
+	}
+	return s.repo.FindByUserID(ctx, userID)
 }
 
 // Create provisions a staff user account and profile. A blank password leaves

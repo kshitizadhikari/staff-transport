@@ -33,6 +33,8 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
 	g.GET("/:id", h.get)
 	g.PATCH("/:id", h.update)
 	g.POST("/:id/cancel", h.cancel)
+
+	h.registerDriverExecution(rg)
 }
 
 type stopRequest struct {
@@ -271,6 +273,14 @@ func (h *Handler) writeError(c *gin.Context, err error) {
 		httpx.Conflict(c, "TRIP_NOT_EDITABLE", "A completed or cancelled trip cannot be modified.")
 	case errors.Is(err, ErrNotCancellable):
 		httpx.Conflict(c, "TRIP_NOT_CANCELLABLE", "A completed trip cannot be cancelled.")
+	case errors.Is(err, ErrForbidden):
+		httpx.Forbidden(c, "FORBIDDEN", "You are not assigned to this trip.")
+	case errors.Is(err, ErrInvalidTransition):
+		httpx.Conflict(c, "TRIP_INVALID_STATE", "This action is not allowed in the trip's current state.")
+	case errors.Is(err, ErrStopNotFound):
+		httpx.NotFound(c, "STOP_NOT_FOUND", "Stop not found on this trip.")
+	case errors.Is(err, ErrPassengerNotFound):
+		httpx.NotFound(c, "PASSENGER_NOT_FOUND", "Passenger not found on this trip.")
 	case errors.Is(err, ErrCapacityExceeded):
 		httpx.Conflict(c, "TRIP_CAPACITY_EXCEEDED", "Passenger count exceeds vehicle capacity.")
 	case errors.Is(err, ErrDriverNotFound):
