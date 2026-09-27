@@ -10,6 +10,7 @@ import (
 	"staff-transport/internal/auth"
 	"staff-transport/internal/config"
 	"staff-transport/internal/drivers"
+	"staff-transport/internal/locations"
 	"staff-transport/internal/staff"
 	"staff-transport/internal/trips"
 	"staff-transport/internal/users"
@@ -18,28 +19,30 @@ import (
 
 // Dependencies are the collaborators the HTTP server needs.
 type Dependencies struct {
-	Config   *config.Config
-	DB       *gorm.DB
-	Redis    *goredis.Client
-	Auth     auth.Service
-	Users    *users.Service
-	Staff    *staff.Service
-	Drivers  *drivers.Service
-	Vehicles *vehicles.Service
-	Trips    *trips.Service
+	Config    *config.Config
+	DB        *gorm.DB
+	Redis     *goredis.Client
+	Auth      auth.Service
+	Users     *users.Service
+	Staff     *staff.Service
+	Drivers   *drivers.Service
+	Vehicles  *vehicles.Service
+	Trips     *trips.Service
+	Locations *locations.Service
 }
 
 type Server struct {
-	cfg      *config.Config
-	db       *gorm.DB
-	rdb      *goredis.Client
-	auth     auth.Service
-	users    *users.Service
-	staff    *staff.Service
-	drivers  *drivers.Service
-	vehicles *vehicles.Service
-	trips    *trips.Service
-	gin      *gin.Engine
+	cfg       *config.Config
+	db        *gorm.DB
+	rdb       *goredis.Client
+	auth      auth.Service
+	users     *users.Service
+	staff     *staff.Service
+	drivers   *drivers.Service
+	vehicles  *vehicles.Service
+	trips     *trips.Service
+	locations *locations.Service
+	gin       *gin.Engine
 }
 
 func New(deps Dependencies) *Server {
@@ -48,16 +51,17 @@ func New(deps Dependencies) *Server {
 	}
 
 	s := &Server{
-		cfg:      deps.Config,
-		db:       deps.DB,
-		rdb:      deps.Redis,
-		auth:     deps.Auth,
-		users:    deps.Users,
-		staff:    deps.Staff,
-		drivers:  deps.Drivers,
-		vehicles: deps.Vehicles,
-		trips:    deps.Trips,
-		gin:      gin.New(),
+		cfg:       deps.Config,
+		db:        deps.DB,
+		rdb:       deps.Redis,
+		auth:      deps.Auth,
+		users:     deps.Users,
+		staff:     deps.Staff,
+		drivers:   deps.Drivers,
+		vehicles:  deps.Vehicles,
+		trips:     deps.Trips,
+		locations: deps.Locations,
+		gin:       gin.New(),
 	}
 	s.gin.Use(gin.Recovery(), corsMiddleware(deps.Config.CORSAllowedOrigins), requestLogger())
 	s.registerRoutes()
@@ -80,4 +84,5 @@ func (s *Server) registerRoutes() {
 	drivers.NewHandler(s.drivers, s.auth).RegisterRoutes(v1)
 	vehicles.NewHandler(s.vehicles, s.auth).RegisterRoutes(v1)
 	trips.NewHandler(s.trips, s.auth).RegisterRoutes(v1)
+	locations.NewHandler(s.locations, s.auth).RegisterRoutes(v1)
 }

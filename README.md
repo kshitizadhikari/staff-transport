@@ -309,6 +309,10 @@ Implemented so far:
 - driver mobile app (Expo, driver accounts only):
   - sign in, today's assigned trips, and trip detail with ordered stops
   - start/complete trip, stop arrive/depart, and passenger pickup/no-show
+- driver location ingestion: `POST /api/v1/trips/:id/locations` accepts a batch
+  of samples for an active (or just-completed) trip, assigned driver only;
+  telemetry is append-only, deduplicated by device timestamp, and tolerant of
+  delayed or out-of-order uploads
 
 Known limitations:
 
@@ -317,8 +321,8 @@ Known limitations:
 - trip stops cannot be replaced after creation (cancel and recreate); driver and
   vehicle double-booking detection and geocoded stop coordinates are not
   implemented yet
-- location ingestion and push notifications are not implemented yet
+- push notifications and driver-mobile location capture are not implemented yet
 - persistent sessions (httpOnly refresh cookie) and the driver mobile auth flow
   are not implemented yet
 
-Next: location ingestion and notifications.
+Next: push notifications, then recurring schedules and event transport.

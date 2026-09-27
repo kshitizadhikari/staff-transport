@@ -14,6 +14,7 @@ import (
 	"staff-transport/internal/config"
 	"staff-transport/internal/db"
 	"staff-transport/internal/drivers"
+	"staff-transport/internal/locations"
 	"staff-transport/internal/redis"
 	"staff-transport/internal/server"
 	"staff-transport/internal/staff"
@@ -52,17 +53,19 @@ func run() error {
 	driverSvc := drivers.NewService(drivers.NewRepository(gdb))
 	vehicleSvc := vehicles.NewService(vehicles.NewRepository(gdb))
 	tripSvc := trips.NewService(trips.NewRepository(gdb), driverSvc, vehicleSvc, staffSvc, cfg.OrgTimezone)
+	locationSvc := locations.NewService(locations.NewRepository(gdb), tripSvc)
 
 	srv := server.New(server.Dependencies{
-		Config:   cfg,
-		DB:       gdb,
-		Redis:    rdb,
-		Auth:     auth.NewService(cfg, rdb),
-		Users:    users.NewService(users.NewRepository(gdb)),
-		Staff:    staffSvc,
-		Drivers:  driverSvc,
-		Vehicles: vehicleSvc,
-		Trips:    tripSvc,
+		Config:    cfg,
+		DB:        gdb,
+		Redis:     rdb,
+		Auth:      auth.NewService(cfg, rdb),
+		Users:     users.NewService(users.NewRepository(gdb)),
+		Staff:     staffSvc,
+		Drivers:   driverSvc,
+		Vehicles:  vehicleSvc,
+		Trips:     tripSvc,
+		Locations: locationSvc,
 	})
 
 	httpServer := &http.Server{
