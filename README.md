@@ -317,6 +317,10 @@ Implemented so far:
   feed (`GET /api/v1/me/notifications`); trip assignment and cancellation enqueue
   Asynq jobs delivered via an Expo push provider in the worker (migration
   `0002_push_tokens`)
+- recurring schedules (`/api/v1/recurring-schedules`, manager-only): weekly
+  definition with a trip template, and idempotent generation of concrete trips
+  for a date range (unique `(schedule, occurrence_date)`); generated trips are
+  ordinary, independently editable trips
 
 Known limitations:
 
@@ -327,7 +331,9 @@ Known limitations:
   implemented yet
 - driver-mobile location capture and push-token registration are not implemented
   yet (the backend endpoints exist)
+- recurring generation is exposed via an API endpoint; a periodic Asynq
+  scheduler that invokes it automatically is not wired yet
 - persistent sessions (httpOnly refresh cookie) and the driver mobile auth flow
   are not implemented yet
 
-Next: recurring schedules and event transport.
+Next: event transport, then recurring-schedule scheduling and mobile capture.
