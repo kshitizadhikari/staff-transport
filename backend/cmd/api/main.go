@@ -17,6 +17,7 @@ import (
 	"staff-transport/internal/redis"
 	"staff-transport/internal/server"
 	"staff-transport/internal/staff"
+	"staff-transport/internal/trips"
 	"staff-transport/internal/users"
 	"staff-transport/internal/vehicles"
 )
@@ -47,15 +48,21 @@ func run() error {
 	}
 	defer rdb.Close()
 
+	staffSvc := staff.NewService(staff.NewRepository(gdb))
+	driverSvc := drivers.NewService(drivers.NewRepository(gdb))
+	vehicleSvc := vehicles.NewService(vehicles.NewRepository(gdb))
+	tripSvc := trips.NewService(trips.NewRepository(gdb), driverSvc, vehicleSvc, staffSvc, cfg.OrgTimezone)
+
 	srv := server.New(server.Dependencies{
 		Config:   cfg,
 		DB:       gdb,
 		Redis:    rdb,
 		Auth:     auth.NewService(cfg, rdb),
 		Users:    users.NewService(users.NewRepository(gdb)),
-		Staff:    staff.NewService(staff.NewRepository(gdb)),
-		Drivers:  drivers.NewService(drivers.NewRepository(gdb)),
-		Vehicles: vehicles.NewService(vehicles.NewRepository(gdb)),
+		Staff:    staffSvc,
+		Drivers:  driverSvc,
+		Vehicles: vehicleSvc,
+		Trips:    tripSvc,
 	})
 
 	httpServer := &http.Server{

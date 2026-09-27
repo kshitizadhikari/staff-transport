@@ -292,10 +292,21 @@ Implemented so far:
   - pagination, search, status filters; create provisions the linked user account
 - manager web UI for staff, drivers, and vehicles: list with search/status
   filters, create/edit forms, and deactivate with confirmation
+- trip management API (manager-only):
+  - `POST/GET /api/v1/trips`, `GET/PATCH /api/v1/trips/:id`, `POST /api/v1/trips/:id/cancel`
+  - ordered stops, passenger assignment, driver/vehicle assignment
+  - capacity and assignment validation; organization-timezone date filtering
+  - audit records for creation, updates, cancellation, and assignment changes
 
-Known limitation: the web session lives in memory, so a full page reload at
-`/` currently requires signing in again. Persistent sessions (httpOnly refresh
-cookie) and the driver mobile auth flow are not implemented yet.
+Known limitations:
 
-Next: trip management (create trips, ordered stops, passenger and
-driver/vehicle assignment).
+- the web session lives in memory, so a full page reload at `/` currently
+  requires signing in again
+- trip stops cannot be replaced after creation (cancel and recreate); driver and
+  vehicle double-booking detection and geocoded stop coordinates are not
+  implemented yet
+- persistent sessions (httpOnly refresh cookie) and the driver mobile auth flow
+  are not implemented yet
+
+Next: driver trip execution (start trip, stop arrival/departure, passenger
+pickup/no-show, complete trip) and manager trip UI.

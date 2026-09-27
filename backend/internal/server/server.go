@@ -11,6 +11,7 @@ import (
 	"staff-transport/internal/config"
 	"staff-transport/internal/drivers"
 	"staff-transport/internal/staff"
+	"staff-transport/internal/trips"
 	"staff-transport/internal/users"
 	"staff-transport/internal/vehicles"
 )
@@ -25,6 +26,7 @@ type Dependencies struct {
 	Staff    *staff.Service
 	Drivers  *drivers.Service
 	Vehicles *vehicles.Service
+	Trips    *trips.Service
 }
 
 type Server struct {
@@ -36,6 +38,7 @@ type Server struct {
 	staff    *staff.Service
 	drivers  *drivers.Service
 	vehicles *vehicles.Service
+	trips    *trips.Service
 	gin      *gin.Engine
 }
 
@@ -53,6 +56,7 @@ func New(deps Dependencies) *Server {
 		staff:    deps.Staff,
 		drivers:  deps.Drivers,
 		vehicles: deps.Vehicles,
+		trips:    deps.Trips,
 		gin:      gin.New(),
 	}
 	s.gin.Use(gin.Recovery(), corsMiddleware(deps.Config.CORSAllowedOrigins), requestLogger())
@@ -75,4 +79,5 @@ func (s *Server) registerRoutes() {
 	staff.NewHandler(s.staff, s.auth).RegisterRoutes(v1)
 	drivers.NewHandler(s.drivers, s.auth).RegisterRoutes(v1)
 	vehicles.NewHandler(s.vehicles, s.auth).RegisterRoutes(v1)
+	trips.NewHandler(s.trips, s.auth).RegisterRoutes(v1)
 }
