@@ -285,9 +285,14 @@ Implemented so far:
 - authentication API: `POST /api/v1/auth/login`, `/refresh`, `/logout`, `GET /api/v1/me`
 - manager account seeding via `make seed-manager`
 - web login screen, authenticated home, and CORS support for the web origin
+- manager directory & fleet API (manager-only):
+  - `GET/POST /api/v1/staff`, `GET/PATCH/DELETE /api/v1/staff/:id`
+  - `GET/POST /api/v1/drivers`, `GET/PATCH/DELETE /api/v1/drivers/:id`
+  - `GET/POST /api/v1/vehicles`, `GET/PATCH/DELETE /api/v1/vehicles/:id`
+  - pagination, search, status filters; create provisions the linked user account
 
 Known limitation: the web session lives in memory, so a full page reload at
 `/` currently requires signing in again. Persistent sessions (httpOnly refresh
 cookie) and the driver mobile auth flow are not implemented yet.
 
-Next: manager-facing staff/driver/vehicle management.
+Next: manager web UI for staff, drivers, and vehicles, then trip management.

@@ -9,32 +9,53 @@ import (
 
 	"staff-transport/internal/auth"
 	"staff-transport/internal/config"
+	"staff-transport/internal/drivers"
+	"staff-transport/internal/staff"
 	"staff-transport/internal/users"
+	"staff-transport/internal/vehicles"
 )
 
-type Server struct {
-	cfg   *config.Config
-	db    *gorm.DB
-	rdb   *goredis.Client
-	auth  auth.Service
-	users *users.Service
-	gin   *gin.Engine
+// Dependencies are the collaborators the HTTP server needs.
+type Dependencies struct {
+	Config   *config.Config
+	DB       *gorm.DB
+	Redis    *goredis.Client
+	Auth     auth.Service
+	Users    *users.Service
+	Staff    *staff.Service
+	Drivers  *drivers.Service
+	Vehicles *vehicles.Service
 }
 
-func New(cfg *config.Config, db *gorm.DB, rdb *goredis.Client, authSvc auth.Service, usersSvc *users.Service) *Server {
-	if cfg.IsProduction() {
+type Server struct {
+	cfg      *config.Config
+	db       *gorm.DB
+	rdb      *goredis.Client
+	auth     auth.Service
+	users    *users.Service
+	staff    *staff.Service
+	drivers  *drivers.Service
+	vehicles *vehicles.Service
+	gin      *gin.Engine
+}
+
+func New(deps Dependencies) *Server {
+	if deps.Config.IsProduction() {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
 	s := &Server{
-		cfg:   cfg,
-		db:    db,
-		rdb:   rdb,
-		auth:  authSvc,
-		users: usersSvc,
-		gin:   gin.New(),
+		cfg:      deps.Config,
+		db:       deps.DB,
+		rdb:      deps.Redis,
+		auth:     deps.Auth,
+		users:    deps.Users,
+		staff:    deps.Staff,
+		drivers:  deps.Drivers,
+		vehicles: deps.Vehicles,
+		gin:      gin.New(),
 	}
-	s.gin.Use(gin.Recovery(), corsMiddleware(cfg.CORSAllowedOrigins), requestLogger())
+	s.gin.Use(gin.Recovery(), corsMiddleware(deps.Config.CORSAllowedOrigins), requestLogger())
 	s.registerRoutes()
 	return s
 }
@@ -51,8 +72,7 @@ func (s *Server) registerRoutes() {
 	v1.GET("/health", s.handleHealth)
 
 	auth.NewHandler(s.auth, s.users).RegisterRoutes(v1)
-
-	// Module routes are registered here as each module is implemented:
-	//   staff.RegisterRoutes(v1, ...)
-	//   trips.RegisterRoutes(v1, ...)
+	staff.NewHandler(s.staff, s.auth).RegisterRoutes(v1)
+	drivers.NewHandler(s.drivers, s.auth).RegisterRoutes(v1)
+	vehicles.NewHandler(s.vehicles, s.auth).RegisterRoutes(v1)
 }

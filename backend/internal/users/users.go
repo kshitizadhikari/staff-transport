@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
@@ -127,6 +128,7 @@ func (r *gormRepository) FindByID(ctx context.Context, id string) (*User, error)
 
 func (r *gormRepository) Create(ctx context.Context, u *User, passwordHash string) (*User, error) {
 	row := userRow{
+		ID:           uuid.NewString(),
 		Name:         u.Name,
 		Email:        u.Email,
 		Phone:        u.Phone,

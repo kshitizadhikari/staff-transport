@@ -13,9 +13,12 @@ import (
 	"staff-transport/internal/auth"
 	"staff-transport/internal/config"
 	"staff-transport/internal/db"
+	"staff-transport/internal/drivers"
 	"staff-transport/internal/redis"
 	"staff-transport/internal/server"
+	"staff-transport/internal/staff"
 	"staff-transport/internal/users"
+	"staff-transport/internal/vehicles"
 )
 
 func main() {
@@ -44,8 +47,16 @@ func run() error {
 	}
 	defer rdb.Close()
 
-	usersSvc := users.NewService(users.NewRepository(gdb))
-	srv := server.New(cfg, gdb, rdb, auth.NewService(cfg, rdb), usersSvc)
+	srv := server.New(server.Dependencies{
+		Config:   cfg,
+		DB:       gdb,
+		Redis:    rdb,
+		Auth:     auth.NewService(cfg, rdb),
+		Users:    users.NewService(users.NewRepository(gdb)),
+		Staff:    staff.NewService(staff.NewRepository(gdb)),
+		Drivers:  drivers.NewService(drivers.NewRepository(gdb)),
+		Vehicles: vehicles.NewService(vehicles.NewRepository(gdb)),
+	})
 
 	httpServer := &http.Server{
 		Addr:              ":" + cfg.Port,

@@ -39,6 +39,19 @@ func ClaimsFrom(c *gin.Context) (*Claims, bool) {
 	return claims, ok
 }
 
+// RequireRole rejects requests whose authenticated user does not have the given
+// role. It must be used after RequireAuth.
+func RequireRole(role string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		claims, ok := ClaimsFrom(c)
+		if !ok || claims.Role != role {
+			httpx.Forbidden(c, "FORBIDDEN", "You do not have permission to perform this action.")
+			return
+		}
+		c.Next()
+	}
+}
+
 func bearerToken(c *gin.Context) (string, bool) {
 	header := c.GetHeader("Authorization")
 	const prefix = "Bearer "

@@ -56,6 +56,11 @@ func NotFound(c *gin.Context, code, message string) {
 	Error(c, http.StatusNotFound, code, message)
 }
 
+// Conflict writes a 409 response for business-state conflicts.
+func Conflict(c *gin.Context, code, message string) {
+	Error(c, http.StatusConflict, code, message)
+}
+
 // Internal logs the underlying error and writes a generic 500 response so
 // internal details are not exposed to clients.
 func Internal(c *gin.Context, err error) {

@@ -45,6 +45,9 @@ POST   /api/v1/trips/:id/complete
 
 Action endpoints are acceptable when the operation represents a domain transition rather than a generic CRUD update.
 
+`DELETE` on staff, drivers, and vehicles deactivates the record (status/active
+flags) instead of removing the row, so historical trip references remain valid.
+
 ## Authentication
 
 ```text
