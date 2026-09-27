@@ -321,6 +321,10 @@ Implemented so far:
   definition with a trip template, and idempotent generation of concrete trips
   for a date range (unique `(schedule, occurrence_date)`); generated trips are
   ordinary, independently editable trips
+- event transport (`/api/v1/events`, manager-only): event details (name, venue,
+  coordinates, start/end) and participants; trips serving an event are those
+  with that `event_id`, listed on the event. Deleting an event preserves and
+  unlinks its trips.
 
 Known limitations:
 
@@ -333,7 +337,9 @@ Known limitations:
   yet (the backend endpoints exist)
 - recurring generation is exposed via an API endpoint; a periodic Asynq
   scheduler that invokes it automatically is not wired yet
+- the `event_trips` table is reserved for future use; event/trip association is
+  currently `trips.event_id`
 - persistent sessions (httpOnly refresh cookie) and the driver mobile auth flow
   are not implemented yet
 
-Next: event transport, then recurring-schedule scheduling and mobile capture.
+Next: manager events UI, then the recurring-schedule scheduler and mobile capture.

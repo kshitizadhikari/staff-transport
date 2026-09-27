@@ -17,6 +17,7 @@ import (
 	"staff-transport/internal/db"
 	"staff-transport/internal/dispatch"
 	"staff-transport/internal/drivers"
+	"staff-transport/internal/events"
 	"staff-transport/internal/locations"
 	"staff-transport/internal/notifications"
 	"staff-transport/internal/redis"
@@ -72,6 +73,7 @@ func run() error {
 	tripSvc := trips.NewService(trips.NewRepository(gdb), driverSvc, vehicleSvc, staffSvc, notifSvc, cfg.OrgTimezone)
 	locationSvc := locations.NewService(locations.NewRepository(gdb), tripSvc)
 	dispatchSvc := dispatch.NewService(dispatch.NewRepository(gdb), tripSvc)
+	eventSvc := events.NewService(events.NewRepository(gdb), staffSvc)
 
 	srv := server.New(server.Dependencies{
 		Config:        cfg,
@@ -86,6 +88,7 @@ func run() error {
 		Locations:     locationSvc,
 		Notifications: notifSvc,
 		Dispatch:      dispatchSvc,
+		Events:        eventSvc,
 	})
 
 	httpServer := &http.Server{

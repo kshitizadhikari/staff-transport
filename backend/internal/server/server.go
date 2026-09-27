@@ -11,6 +11,7 @@ import (
 	"staff-transport/internal/config"
 	"staff-transport/internal/dispatch"
 	"staff-transport/internal/drivers"
+	"staff-transport/internal/events"
 	"staff-transport/internal/locations"
 	"staff-transport/internal/notifications"
 	"staff-transport/internal/staff"
@@ -33,6 +34,7 @@ type Dependencies struct {
 	Locations     *locations.Service
 	Notifications *notifications.Service
 	Dispatch      *dispatch.Service
+	Events        *events.Service
 }
 
 type Server struct {
@@ -48,6 +50,7 @@ type Server struct {
 	locations     *locations.Service
 	notifications *notifications.Service
 	dispatch      *dispatch.Service
+	events        *events.Service
 	gin           *gin.Engine
 }
 
@@ -69,6 +72,7 @@ func New(deps Dependencies) *Server {
 		locations:     deps.Locations,
 		notifications: deps.Notifications,
 		dispatch:      deps.Dispatch,
+		events:        deps.Events,
 		gin:           gin.New(),
 	}
 	s.gin.Use(gin.Recovery(), corsMiddleware(deps.Config.CORSAllowedOrigins), requestLogger())
@@ -95,4 +99,5 @@ func (s *Server) registerRoutes() {
 	locations.NewHandler(s.locations, s.auth).RegisterRoutes(v1)
 	notifications.NewHandler(s.notifications, s.auth).RegisterRoutes(v1)
 	dispatch.NewHandler(s.dispatch, s.auth).RegisterRoutes(v1)
+	events.NewHandler(s.events, s.auth).RegisterRoutes(v1)
 }
