@@ -1,0 +1,55 @@
+# Environment
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Node
+node_modules/
+.npm/
+.next/
+out/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Turborepo
+.turbo/
+
+# Expo / React Native
+.expo/
+.expo-shared/
+android/.gradle/
+android/app/build/
+android/build/
+ios/build/
+
+# Go
+bin/
+*.test
+coverage.out
+
+# Logs
+*.log
+logs/
+
+# Docker
+.docker/
+
+# Generated / local data
+.tmp/
+tmp/
+
+# Secrets / certificates
+*.pem
+*.key
+*.p12
+*.pfx
