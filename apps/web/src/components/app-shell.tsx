@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 
 const MANAGER_NAV = [
   { href: "/", label: "Dashboard" },
+  { href: "/trips", label: "Trips" },
   { href: "/staff", label: "Staff" },
   { href: "/drivers", label: "Drivers" },
   { href: "/vehicles", label: "Vehicles" },

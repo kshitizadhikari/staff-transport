@@ -292,6 +292,8 @@ Implemented so far:
   - pagination, search, status filters; create provisions the linked user account
 - manager web UI for staff, drivers, and vehicles: list with search/status
   filters, create/edit forms, and deactivate with confirmation
+- manager trip UI: trips list with status/date filters, trip creation with
+  ordered stops and passenger assignment, and trip detail with edit and cancel
 - trip management API (manager-only):
   - `POST/GET /api/v1/trips`, `GET/PATCH /api/v1/trips/:id`, `POST /api/v1/trips/:id/cancel`
   - ordered stops, passenger assignment, driver/vehicle assignment
@@ -319,4 +321,4 @@ Known limitations:
 - persistent sessions (httpOnly refresh cookie) and the driver mobile auth flow
   are not implemented yet
 
-Next: manager trip UI, location ingestion, and notifications.
+Next: location ingestion and notifications.
