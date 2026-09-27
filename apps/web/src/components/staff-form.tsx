@@ -1,9 +1,10 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
 
+import { AddressInput } from "@/components/address-input";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -34,6 +35,7 @@ type Props = {
 export function StaffForm({ mode, staff, onSubmit }: Props) {
   const {
     register,
+    control,
     handleSubmit,
     setError,
     formState: { errors, isSubmitting },
@@ -102,16 +104,27 @@ export function StaffForm({ mode, staff, onSubmit }: Props) {
         </div>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="department">Department</Label>
-          <Input id="department" {...register("department")} />
-        </div>
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="home_address">Home address</Label>
-          <Input id="home_address" {...register("home_address")} />
-        </div>
+      <div className="flex flex-col gap-2">
+        <Label htmlFor="department">Department</Label>
+        <Input id="department" {...register("department")} />
       </div>
+
+      <Controller
+        control={control}
+        name="home_address"
+        render={({ field }) => (
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="home_address">Home address</Label>
+            <AddressInput
+              id="home_address"
+              value={field.value}
+              onChange={field.onChange}
+              placeholder="Search an address…"
+              showMap
+            />
+          </div>
+        )}
+      />
 
       {mode === "create" ? (
         <div className="flex flex-col gap-2">

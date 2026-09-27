@@ -2,9 +2,10 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery } from "@tanstack/react-query";
-import { useFieldArray, useForm, useWatch } from "react-hook-form";
+import { Controller, useFieldArray, useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 
+import { AddressInput } from "@/components/address-input";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -213,9 +214,17 @@ export function TripForm({
             </div>
             <div className="flex min-w-48 flex-1 flex-col gap-2">
               <Label htmlFor={`stops.${index}.address`}>Address</Label>
-              <Input
-                id={`stops.${index}.address`}
-                {...register(`stops.${index}.address`)}
+              <Controller
+                control={control}
+                name={`stops.${index}.address`}
+                render={({ field }) => (
+                  <AddressInput
+                    id={`stops.${index}.address`}
+                    value={field.value}
+                    onChange={field.onChange}
+                    placeholder="Search an address…"
+                  />
+                )}
               />
             </div>
             <Button

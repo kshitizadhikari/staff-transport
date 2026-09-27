@@ -287,6 +287,8 @@ Implemented so far:
 - address geocoding via Mapbox (`internal/maps`): staff home addresses, event
   venues, and trip-stop addresses are resolved to coordinates and stored as
   PostGIS points; geocoding failures are non-fatal (the address is kept)
+- manager address fields use Mapbox autocomplete with a map preview
+  (`NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN` in the web app)
 - web login screen, authenticated home, and CORS support for the web origin
 - persistent web sessions: login sets an httpOnly refresh cookie that is rotated
   on use, so a page reload keeps the user signed in
