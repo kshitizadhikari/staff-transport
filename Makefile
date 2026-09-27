@@ -1,4 +1,4 @@
-.PHONY: help setup infra-up infra-down stack-up stack-down migrate-up migrate-down seed-manager backend-run backend-worker backend-logs backend-build backend-test backend-fmt backend-vet backend-check web-dev mobile-dev check
+.PHONY: help setup infra-up infra-down stack-up stack-down migrate-up migrate-down seed seed-manager backend-run backend-worker backend-logs backend-build backend-test backend-fmt backend-vet backend-check web-dev mobile-dev check
 
 help:
 	@echo "Targets:"
@@ -9,7 +9,7 @@ help:
 	@echo "  stack-down     Stop the full backend stack"
 	@echo "  migrate-up     Apply database migrations"
 	@echo "  migrate-down   Roll back the latest migration"
-	@echo "  seed-manager   Create/update the local manager account"
+	@echo "  seed           Create/update local manager, drivers, and vehicles"
 	@echo "  backend-run    Run the API container in the foreground"
 	@echo "  backend-worker Run the worker container in the foreground"
 	@echo "  backend-logs   Tail API and worker logs"
@@ -42,8 +42,10 @@ migrate-down:
 		-database=postgres://postgres:postgres@postgres:5432/staff_transport?sslmode=disable \
 		down 1
 
-seed-manager:
+seed:
 	docker compose -f docker-compose.dev.yml run --rm seed
+
+seed-manager: seed
 
 backend-run:
 	docker compose -f docker-compose.dev.yml up --build api

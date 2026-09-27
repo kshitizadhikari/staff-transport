@@ -54,15 +54,18 @@ make migrate-up
 make migrate-down     # roll back the latest migration
 ```
 
-Create a local manager account for logging in (idempotent; re-run to reset the
-password):
+Create local development data: a manager account, ten drivers
+(`driver1@example.com` … `driver10@example.com`), and ten vehicles
+(`TEST-VEH-01` … `TEST-VEH-10`). It is idempotent; re-run to reset the manager
+password or to fill in anything missing.
 
 ```bash
-make seed-manager
+make seed
 ```
 
-Defaults are `manager@example.com` / `changeme123`. Override with
-`SEED_MANAGER_NAME`, `SEED_MANAGER_EMAIL`, and `SEED_MANAGER_PASSWORD` in `.env`.
+Defaults are `manager@example.com` / `changeme123` and drivers
+`driverpass123`. Override with `SEED_MANAGER_NAME`, `SEED_MANAGER_EMAIL`,
+`SEED_MANAGER_PASSWORD`, and `SEED_DRIVER_PASSWORD` in `.env`.
 
 ## 5. Run the backend
 
