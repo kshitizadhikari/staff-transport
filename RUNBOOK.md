@@ -54,18 +54,26 @@ make migrate-up
 make migrate-down     # roll back the latest migration
 ```
 
-Create local development data: a manager account, ten drivers
-(`driver1@example.com` … `driver10@example.com`), and ten vehicles
-(`TEST-VEH-01` … `TEST-VEH-10`). It is idempotent; re-run to reset the manager
-password or to fill in anything missing.
+Create local development data: a manager, ten staff, ten drivers, and ten
+vehicles with realistic details (names, emails, phones, departments, license
+numbers, plates). Emails use `@stafftrans.example.com`. It is idempotent;
+re-run to reset the manager password or to fill in anything missing.
 
 ```bash
 make seed
 ```
 
-Defaults are `manager@example.com` / `changeme123` and drivers
-`driverpass123`. Override with `SEED_MANAGER_NAME`, `SEED_MANAGER_EMAIL`,
-`SEED_MANAGER_PASSWORD`, and `SEED_DRIVER_PASSWORD` in `.env`.
+Seeded accounts and default passwords:
+
+```text
+manager   manager@example.com               changeme123
+staff     first.last@stafftrans.example.com staffpass123
+driver    first.last@stafftrans.example.com driverpass123
+```
+
+Override with `SEED_MANAGER_NAME`, `SEED_MANAGER_EMAIL`,
+`SEED_MANAGER_PASSWORD`, `SEED_STAFF_PASSWORD`, and `SEED_DRIVER_PASSWORD` in
+`.env`.
 
 ## 5. Run the backend
 
