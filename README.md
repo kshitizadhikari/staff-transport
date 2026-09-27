@@ -290,9 +290,12 @@ Implemented so far:
   - `GET/POST /api/v1/drivers`, `GET/PATCH/DELETE /api/v1/drivers/:id`
   - `GET/POST /api/v1/vehicles`, `GET/PATCH/DELETE /api/v1/vehicles/:id`
   - pagination, search, status filters; create provisions the linked user account
+- manager web UI for staff, drivers, and vehicles: list with search/status
+  filters, create/edit forms, and deactivate with confirmation
 
 Known limitation: the web session lives in memory, so a full page reload at
 `/` currently requires signing in again. Persistent sessions (httpOnly refresh
 cookie) and the driver mobile auth flow are not implemented yet.
 
-Next: manager web UI for staff, drivers, and vehicles, then trip management.
+Next: trip management (create trips, ordered stops, passenger and
+driver/vehicle assignment).
