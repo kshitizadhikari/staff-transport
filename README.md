@@ -284,6 +284,9 @@ Implemented so far:
 - backend health/readiness endpoints, GORM + Redis wiring
 - authentication API: `POST /api/v1/auth/login`, `/refresh`, `/logout`, `GET /api/v1/me`
 - local seeding via `make seed` (manager, ten staff, ten drivers, ten vehicles)
+- address geocoding via Mapbox (`internal/maps`): staff home addresses, event
+  venues, and trip-stop addresses are resolved to coordinates and stored as
+  PostGIS points; geocoding failures are non-fatal (the address is kept)
 - web login screen, authenticated home, and CORS support for the web origin
 - persistent web sessions: login sets an httpOnly refresh cookie that is rotated
   on use, so a page reload keeps the user signed in

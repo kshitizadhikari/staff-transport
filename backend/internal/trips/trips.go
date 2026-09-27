@@ -13,6 +13,7 @@ import (
 
 	"staff-transport/internal/audit"
 	"staff-transport/internal/drivers"
+	"staff-transport/internal/maps"
 	"staff-transport/internal/notifications"
 	"staff-transport/internal/staff"
 	"staff-transport/internal/users"
@@ -135,6 +136,8 @@ type StopInput struct {
 	Type        string
 	Address     *string
 	ScheduledAt *time.Time
+	Latitude    *float64
+	Longitude   *float64
 }
 
 // PassengerInput assigns a staff member to a trip, optionally referencing stop
@@ -471,6 +474,7 @@ func (r *gormRepository) Create(ctx context.Context, in CreateInput, status, act
 				"sequence":     i,
 				"stop_type":    stop.Type,
 				"address":      stop.Address,
+				"point":        pointOrNil(stop.Latitude, stop.Longitude),
 				"scheduled_at": stop.ScheduledAt,
 				"status":       StopPending,
 				"created_at":   now,
@@ -905,13 +909,15 @@ type Service struct {
 	vehicles VehicleReader
 	staff    StaffReader
 	notifier Notifier
+	geocoder maps.Geocoder
 	orgTZ    string
 }
 
-// NewService returns a trip service. orgTZ is the organization timezone used
-// for date filtering and user-facing scheduling.
-func NewService(repo Repository, driverSvc DriverReader, vehicleSvc VehicleReader, staffSvc StaffReader, notifier Notifier, orgTZ string) *Service {
-	return &Service{repo: repo, drivers: driverSvc, vehicles: vehicleSvc, staff: staffSvc, notifier: notifier, orgTZ: orgTZ}
+// NewService returns a trip service. geocoder may be nil, in which case stop
+// addresses are stored without coordinates. orgTZ is the organization timezone
+// used for date filtering and user-facing scheduling.
+func NewService(repo Repository, driverSvc DriverReader, vehicleSvc VehicleReader, staffSvc StaffReader, notifier Notifier, geocoder maps.Geocoder, orgTZ string) *Service {
+	return &Service{repo: repo, drivers: driverSvc, vehicles: vehicleSvc, staff: staffSvc, notifier: notifier, geocoder: geocoder, orgTZ: orgTZ}
 }
 
 // List returns a page of trips. When date is provided it is interpreted in the
@@ -954,6 +960,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput, actorID string) (*
 		}
 		in.Stops[i].Address = cleanOptional(in.Stops[i].Address)
 	}
+	s.geocodeStops(ctx, in.Stops)
 
 	in.DriverID = cleanOptional(in.DriverID)
 	in.VehicleID = cleanOptional(in.VehicleID)
@@ -1390,6 +1397,36 @@ func validStopIndex(index *int, stopCount int) bool {
 		return true
 	}
 	return *index >= 0 && *index < stopCount
+}
+
+// geocodeStops resolves stop addresses to coordinates. Geocoding failures are
+// non-fatal: the address snapshot is still stored without a point.
+func (s *Service) geocodeStops(ctx context.Context, stops []StopInput) {
+	if s.geocoder == nil {
+		return
+	}
+	for i := range stops {
+		stop := &stops[i]
+		if stop.Address == nil || (stop.Latitude != nil && stop.Longitude != nil) {
+			continue
+		}
+		location, err := s.geocoder.Geocode(ctx, *stop.Address)
+		if err != nil {
+			if !errors.Is(err, maps.ErrNotConfigured) && !errors.Is(err, maps.ErrNotFound) {
+				slog.Warn("trip stop geocoding failed", "error", err)
+			}
+			continue
+		}
+		latitude, longitude := location.Latitude, location.Longitude
+		stop.Latitude, stop.Longitude = &latitude, &longitude
+	}
+}
+
+func pointOrNil(latitude, longitude *float64) any {
+	if latitude == nil || longitude == nil {
+		return nil
+	}
+	return gorm.Expr("ST_SetSRID(ST_MakePoint(?, ?), 4326)", *longitude, *latitude)
 }
 
 func stopIDAt(stopIDs []string, index *int) any {

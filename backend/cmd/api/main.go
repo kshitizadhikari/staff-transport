@@ -19,6 +19,7 @@ import (
 	"staff-transport/internal/drivers"
 	"staff-transport/internal/events"
 	"staff-transport/internal/locations"
+	"staff-transport/internal/maps"
 	"staff-transport/internal/notifications"
 	"staff-transport/internal/redis"
 	"staff-transport/internal/server"
@@ -54,7 +55,9 @@ func run() error {
 	}
 	defer rdb.Close()
 
-	staffSvc := staff.NewService(staff.NewRepository(gdb))
+	geocoder := maps.NewMapboxGeocoder(cfg.MapboxAccessToken, cfg.MapboxCountry)
+
+	staffSvc := staff.NewService(staff.NewRepository(gdb), geocoder)
 	driverSvc := drivers.NewService(drivers.NewRepository(gdb))
 	vehicleSvc := vehicles.NewService(vehicles.NewRepository(gdb))
 
@@ -70,10 +73,10 @@ func run() error {
 		notifications.NewExpoSender(cfg.ExpoAccessToken),
 		asynqClient,
 	)
-	tripSvc := trips.NewService(trips.NewRepository(gdb), driverSvc, vehicleSvc, staffSvc, notifSvc, cfg.OrgTimezone)
+	tripSvc := trips.NewService(trips.NewRepository(gdb), driverSvc, vehicleSvc, staffSvc, notifSvc, geocoder, cfg.OrgTimezone)
 	locationSvc := locations.NewService(locations.NewRepository(gdb), tripSvc)
 	dispatchSvc := dispatch.NewService(dispatch.NewRepository(gdb), tripSvc)
-	eventSvc := events.NewService(events.NewRepository(gdb), staffSvc)
+	eventSvc := events.NewService(events.NewRepository(gdb), staffSvc, geocoder)
 
 	srv := server.New(server.Dependencies{
 		Config:        cfg,

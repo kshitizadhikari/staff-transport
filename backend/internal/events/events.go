@@ -3,6 +3,7 @@ package events
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"gorm.io/gorm"
 
 	"staff-transport/internal/audit"
+	"staff-transport/internal/maps"
 	"staff-transport/internal/staff"
 )
 
@@ -350,13 +352,15 @@ type StaffReader interface {
 
 // Service holds event business behavior.
 type Service struct {
-	repo  Repository
-	staff StaffReader
+	repo     Repository
+	staff    StaffReader
+	geocoder maps.Geocoder
 }
 
-// NewService returns an event service.
-func NewService(repo Repository, staffSvc StaffReader) *Service {
-	return &Service{repo: repo, staff: staffSvc}
+// NewService returns an event service. geocoder may be nil, in which case
+// addresses are stored without coordinates.
+func NewService(repo Repository, staffSvc StaffReader, geocoder maps.Geocoder) *Service {
+	return &Service{repo: repo, staff: staffSvc, geocoder: geocoder}
 }
 
 // List returns a page of events.
@@ -380,6 +384,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput, actorID string) (*
 	}
 	in.Address = cleanOptional(in.Address)
 	in.Notes = cleanOptional(in.Notes)
+	s.geocode(ctx, in.Address, &in.Latitude, &in.Longitude)
 	return s.repo.Create(ctx, in, actorID)
 }
 
@@ -397,6 +402,7 @@ func (s *Service) Update(ctx context.Context, id string, in UpdateInput, actorID
 	}
 	in.Address = cleanOptional(in.Address)
 	in.Notes = cleanOptional(in.Notes)
+	s.geocode(ctx, in.Address, &in.Latitude, &in.Longitude)
 	return s.repo.Update(ctx, id, in, actorID)
 }
 
@@ -430,6 +436,21 @@ func (s *Service) RemoveParticipant(ctx context.Context, eventID, staffID, actor
 		return err
 	}
 	return s.repo.RemoveParticipant(ctx, eventID, staffID, actorID)
+}
+
+func (s *Service) geocode(ctx context.Context, address *string, latitude, longitude **float64) {
+	if address == nil || s.geocoder == nil || (*latitude != nil && *longitude != nil) {
+		return
+	}
+	location, err := s.geocoder.Geocode(ctx, *address)
+	if err != nil {
+		if !errors.Is(err, maps.ErrNotConfigured) && !errors.Is(err, maps.ErrNotFound) {
+			slog.Warn("event address geocoding failed", "error", err)
+		}
+		return
+	}
+	*latitude = &location.Latitude
+	*longitude = &location.Longitude
 }
 
 func validateTimes(startsAt, endsAt *time.Time) error {

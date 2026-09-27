@@ -69,7 +69,7 @@ func (f *fakeRepo) Update(_ context.Context, id string, in UpdateInput) (*Staff,
 
 func TestCreateTrimsNameAndHashesPassword(t *testing.T) {
 	repo := &fakeRepo{}
-	svc := NewService(repo)
+	svc := NewService(repo, nil)
 
 	_, err := svc.Create(context.Background(), CreateInput{Name: "  Ada  ", Active: true}, "secret-password")
 	if err != nil {
@@ -85,7 +85,7 @@ func TestCreateTrimsNameAndHashesPassword(t *testing.T) {
 
 func TestCreateWithoutPasswordLeavesNoHash(t *testing.T) {
 	repo := &fakeRepo{}
-	svc := NewService(repo)
+	svc := NewService(repo, nil)
 
 	if _, err := svc.Create(context.Background(), CreateInput{Name: "Ada", Active: true}, ""); err != nil {
 		t.Fatalf("create: %v", err)
@@ -96,7 +96,7 @@ func TestCreateWithoutPasswordLeavesNoHash(t *testing.T) {
 }
 
 func TestCreateValidatesInput(t *testing.T) {
-	svc := NewService(&fakeRepo{})
+	svc := NewService(&fakeRepo{}, nil)
 	bad := "not-an-email"
 
 	if _, err := svc.Create(context.Background(), CreateInput{Name: "  ", Active: true}, ""); !errors.Is(err, ErrNameRequired) {
@@ -109,7 +109,7 @@ func TestCreateValidatesInput(t *testing.T) {
 
 func TestCreateMapsUniqueViolation(t *testing.T) {
 	repo := &fakeRepo{createErr: &pgconn.PgError{Code: "23505"}}
-	svc := NewService(repo)
+	svc := NewService(repo, nil)
 
 	if _, err := svc.Create(context.Background(), CreateInput{Name: "Ada", Active: true}, ""); !errors.Is(err, ErrEmailTaken) {
 		t.Fatalf("expected ErrEmailTaken, got %v", err)
@@ -118,7 +118,7 @@ func TestCreateMapsUniqueViolation(t *testing.T) {
 
 func TestDeactivateSetsInactive(t *testing.T) {
 	repo := &fakeRepo{}
-	svc := NewService(repo)
+	svc := NewService(repo, nil)
 
 	if err := svc.Deactivate(context.Background(), "s1"); err != nil {
 		t.Fatalf("deactivate: %v", err)
@@ -147,7 +147,7 @@ func (f fakeAuth) ParseAccessToken(token string) (*auth.Claims, error) {
 func newStaffRouter(repo *fakeRepo, claims map[string]*auth.Claims) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	NewHandler(NewService(repo), fakeAuth{claims: claims}).RegisterRoutes(r.Group("/api/v1"))
+	NewHandler(NewService(repo, nil), fakeAuth{claims: claims}).RegisterRoutes(r.Group("/api/v1"))
 	return r
 }
 

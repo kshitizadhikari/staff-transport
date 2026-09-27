@@ -100,7 +100,7 @@ func (f fakeStaff) Get(_ context.Context, id string) (*staff.Staff, error) {
 }
 
 func TestCreateValidates(t *testing.T) {
-	svc := NewService(newFakeRepo(), fakeStaff{})
+	svc := NewService(newFakeRepo(), fakeStaff{}, nil)
 	ctx := context.Background()
 	start := time.Date(2030, 1, 2, 10, 0, 0, 0, time.UTC)
 	end := time.Date(2030, 1, 2, 9, 0, 0, 0, time.UTC)
@@ -118,12 +118,12 @@ func TestAddParticipantValidatesStaff(t *testing.T) {
 	repo.events["e1"] = &Event{ID: "e1", Name: "Gala"}
 	ctx := context.Background()
 
-	missing := NewService(repo, fakeStaff{err: staff.ErrNotFound})
+	missing := NewService(repo, fakeStaff{err: staff.ErrNotFound}, nil)
 	if err := missing.AddParticipant(ctx, "e1", "s1", "m1"); !errors.Is(err, ErrStaffNotFound) {
 		t.Fatalf("expected ErrStaffNotFound, got %v", err)
 	}
 
-	inactive := NewService(repo, fakeStaff{member: &staff.Staff{ID: "s1", Active: false}})
+	inactive := NewService(repo, fakeStaff{member: &staff.Staff{ID: "s1", Active: false}}, nil)
 	if err := inactive.AddParticipant(ctx, "e1", "s1", "m1"); !errors.Is(err, ErrStaffNotFound) {
 		t.Fatalf("expected ErrStaffNotFound for inactive, got %v", err)
 	}
@@ -136,7 +136,7 @@ func TestAddParticipantValidatesStaff(t *testing.T) {
 func TestAddParticipantIsIdempotent(t *testing.T) {
 	repo := newFakeRepo()
 	repo.events["e1"] = &Event{ID: "e1"}
-	svc := NewService(repo, fakeStaff{member: &staff.Staff{ID: "s1", Active: true}})
+	svc := NewService(repo, fakeStaff{member: &staff.Staff{ID: "s1", Active: true}}, nil)
 	ctx := context.Background()
 
 	if err := svc.AddParticipant(ctx, "e1", "s1", "m1"); err != nil {
@@ -175,7 +175,7 @@ func (f fakeAuth) ParseAccessToken(token string) (*auth.Claims, error) {
 
 func TestEventRoutesRequireManager(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	svc := NewService(newFakeRepo(), fakeStaff{member: &staff.Staff{ID: "s1", Active: true}})
+	svc := NewService(newFakeRepo(), fakeStaff{member: &staff.Staff{ID: "s1", Active: true}}, nil)
 	claims := map[string]*auth.Claims{
 		"manager-token": {UserID: "m1", Role: "manager"},
 		"staff-token":   {UserID: "s1", Role: "staff"},

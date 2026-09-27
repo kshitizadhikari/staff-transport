@@ -3,6 +3,7 @@ package staff
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/mail"
 	"strings"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"gorm.io/gorm"
 
 	"staff-transport/internal/db"
+	"staff-transport/internal/maps"
 	"staff-transport/internal/users"
 )
 
@@ -40,23 +42,27 @@ type Staff struct {
 
 // CreateInput carries validated create values to the repository.
 type CreateInput struct {
-	Name        string
-	Email       *string
-	Phone       *string
-	Department  *string
-	HomeAddress *string
-	Active      bool
+	Name          string
+	Email         *string
+	Phone         *string
+	Department    *string
+	HomeAddress   *string
+	HomeLatitude  *float64
+	HomeLongitude *float64
+	Active        bool
 }
 
 // UpdateInput carries partial update values. A nil field is left unchanged; a
 // non-nil empty string clears a nullable field.
 type UpdateInput struct {
-	Name        *string
-	Email       *string
-	Phone       *string
-	Department  *string
-	HomeAddress *string
-	Active      *bool
+	Name          *string
+	Email         *string
+	Phone         *string
+	Department    *string
+	HomeAddress   *string
+	HomeLatitude  *float64
+	HomeLongitude *float64
+	Active        *bool
 }
 
 // ListFilter controls staff listing.
@@ -218,6 +224,7 @@ func (r *gormRepository) Create(ctx context.Context, in CreateInput, passwordHas
 			"user_id":      userID,
 			"department":   in.Department,
 			"home_address": in.HomeAddress,
+			"home_point":   pointOrNil(in.HomeLatitude, in.HomeLongitude),
 			"active":       in.Active,
 			"created_at":   now,
 			"updated_at":   now,
@@ -262,6 +269,9 @@ func (r *gormRepository) Update(ctx context.Context, id string, in UpdateInput) 
 	if in.HomeAddress != nil {
 		staffUpdates["home_address"] = nullable(*in.HomeAddress)
 	}
+	if in.HomeLatitude != nil && in.HomeLongitude != nil {
+		staffUpdates["home_point"] = pointOrNil(in.HomeLatitude, in.HomeLongitude)
+	}
 	if in.Active != nil {
 		staffUpdates["active"] = *in.Active
 		userUpdates["status"] = statusForActive(*in.Active)
@@ -288,12 +298,14 @@ func (r *gormRepository) Update(ctx context.Context, id string, in UpdateInput) 
 
 // Service holds staff business behavior.
 type Service struct {
-	repo Repository
+	repo     Repository
+	geocoder maps.Geocoder
 }
 
-// NewService returns a staff service backed by repo.
-func NewService(repo Repository) *Service {
-	return &Service{repo: repo}
+// NewService returns a staff service backed by repo. geocoder may be nil, in
+// which case home addresses are stored without coordinates.
+func NewService(repo Repository, geocoder maps.Geocoder) *Service {
+	return &Service{repo: repo, geocoder: geocoder}
 }
 
 // List returns a page of staff profiles.
@@ -329,6 +341,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput, password string) (
 	in.Phone = cleanOptional(in.Phone)
 	in.Department = cleanOptional(in.Department)
 	in.HomeAddress = cleanOptional(in.HomeAddress)
+	s.geocodeCreate(ctx, &in)
 
 	var hash *string
 	if password != "" {
@@ -365,6 +378,7 @@ func (s *Service) Update(ctx context.Context, id string, in UpdateInput) (*Staff
 	in.Phone = cleanOptional(in.Phone)
 	in.Department = cleanOptional(in.Department)
 	in.HomeAddress = cleanOptional(in.HomeAddress)
+	s.geocodeUpdate(ctx, &in)
 
 	updated, err := s.repo.Update(ctx, id, in)
 	if err != nil {
@@ -381,6 +395,49 @@ func (s *Service) Deactivate(ctx context.Context, id string) error {
 	active := false
 	_, err := s.repo.Update(ctx, id, UpdateInput{Active: &active})
 	return err
+}
+
+// geocodeCreate resolves a home address to coordinates. Geocoding failures are
+// non-fatal: the address is still stored without a point.
+func (s *Service) geocodeCreate(ctx context.Context, in *CreateInput) {
+	if in.HomeAddress == nil {
+		return
+	}
+	if location := s.geocode(ctx, *in.HomeAddress); location != nil {
+		in.HomeLatitude = &location.Latitude
+		in.HomeLongitude = &location.Longitude
+	}
+}
+
+func (s *Service) geocodeUpdate(ctx context.Context, in *UpdateInput) {
+	if in.HomeAddress == nil {
+		return
+	}
+	if location := s.geocode(ctx, *in.HomeAddress); location != nil {
+		in.HomeLatitude = &location.Latitude
+		in.HomeLongitude = &location.Longitude
+	}
+}
+
+func (s *Service) geocode(ctx context.Context, address string) *maps.Location {
+	if s.geocoder == nil || strings.TrimSpace(address) == "" {
+		return nil
+	}
+	location, err := s.geocoder.Geocode(ctx, address)
+	if err != nil {
+		if !errors.Is(err, maps.ErrNotConfigured) && !errors.Is(err, maps.ErrNotFound) {
+			slog.Warn("staff home address geocoding failed", "error", err)
+		}
+		return nil
+	}
+	return location
+}
+
+func pointOrNil(latitude, longitude *float64) any {
+	if latitude == nil || longitude == nil {
+		return nil
+	}
+	return gorm.Expr("ST_SetSRID(ST_MakePoint(?, ?), 4326)", *longitude, *latitude)
 }
 
 func cleanOptional(v *string) *string {

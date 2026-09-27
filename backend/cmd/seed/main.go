@@ -20,6 +20,7 @@ import (
 	"staff-transport/internal/config"
 	"staff-transport/internal/db"
 	"staff-transport/internal/drivers"
+	"staff-transport/internal/maps"
 	"staff-transport/internal/staff"
 	"staff-transport/internal/users"
 	"staff-transport/internal/vehicles"
@@ -105,11 +106,13 @@ func run() error {
 		return err
 	}
 
+	geocoder := maps.NewMapboxGeocoder(cfg.MapboxAccessToken, cfg.MapboxCountry)
+
 	if err := seedManager(ctx, gdb); err != nil {
 		return err
 	}
 
-	staffCreated, staffSkipped, err := seedStaff(ctx, gdb)
+	staffCreated, staffSkipped, err := seedStaff(ctx, gdb, geocoder)
 	if err != nil {
 		return err
 	}
@@ -144,9 +147,9 @@ func seedManager(ctx context.Context, gdb *gorm.DB) error {
 	return nil
 }
 
-func seedStaff(ctx context.Context, gdb *gorm.DB) (created, skipped int, err error) {
+func seedStaff(ctx context.Context, gdb *gorm.DB, geocoder *maps.MapboxGeocoder) (created, skipped int, err error) {
 	password := env("SEED_STAFF_PASSWORD", "staffpass123")
-	svc := staff.NewService(staff.NewRepository(gdb))
+	svc := staff.NewService(staff.NewRepository(gdb), geocoder)
 
 	for _, seed := range staffSeeds {
 		email, phone, department, address := seed.Email, seed.Phone, seed.Department, seed.HomeAddress
@@ -163,13 +166,45 @@ func seedStaff(ctx context.Context, gdb *gorm.DB) (created, skipped int, err err
 			created++
 			slog.Info("seeded staff", "email", seed.Email, "department", seed.Department)
 		case errors.Is(createErr, staff.ErrEmailTaken), db.IsUniqueViolation(createErr):
+			// Refresh existing staff so addresses are (re)geocoded.
+			id, lookupErr := staffIDByEmail(ctx, gdb, seed.Email)
+			if lookupErr != nil {
+				return created, skipped, lookupErr
+			}
+			name := seed.Name
+			_, updateErr := svc.Update(ctx, id, staff.UpdateInput{
+				Name:        &name,
+				Phone:       &phone,
+				Department:  &department,
+				HomeAddress: &address,
+			})
+			if updateErr != nil {
+				return created, skipped, updateErr
+			}
 			skipped++
-			slog.Info("staff already exists, skipping", "email", seed.Email)
+			slog.Info("staff already exists, refreshed", "email", seed.Email)
 		default:
 			return created, skipped, createErr
 		}
 	}
 	return created, skipped, nil
+}
+
+func staffIDByEmail(ctx context.Context, gdb *gorm.DB, email string) (string, error) {
+	var id string
+	err := gdb.WithContext(ctx).
+		Table("staff").
+		Select("staff.id").
+		Joins("JOIN users u ON u.id = staff.user_id").
+		Where("u.email = ?", email).
+		Scan(&id).Error
+	if err != nil {
+		return "", err
+	}
+	if id == "" {
+		return "", fmt.Errorf("staff %s not found after conflict", email)
+	}
+	return id, nil
 }
 
 func seedDrivers(ctx context.Context, gdb *gorm.DB) (created, skipped int, err error) {

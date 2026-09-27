@@ -27,8 +27,10 @@ type Config struct {
 
 	CORSAllowedOrigins []string
 
-	GoogleMapsAPIKey string
-	ExpoAccessToken  string
+	GoogleMapsAPIKey  string
+	MapboxAccessToken string
+	MapboxCountry     string
+	ExpoAccessToken   string
 }
 
 func Load() (*Config, error) {
@@ -60,8 +62,10 @@ func Load() (*Config, error) {
 
 		CORSAllowedOrigins: splitList(env("CORS_ALLOWED_ORIGINS", "")),
 
-		GoogleMapsAPIKey: env("GOOGLE_MAPS_API_KEY", ""),
-		ExpoAccessToken:  env("EXPO_ACCESS_TOKEN", ""),
+		GoogleMapsAPIKey:  env("GOOGLE_MAPS_API_KEY", ""),
+		MapboxAccessToken: env("MAPBOX_ACCESS_TOKEN", ""),
+		MapboxCountry:     env("MAPBOX_COUNTRY", "np"),
+		ExpoAccessToken:   env("EXPO_ACCESS_TOKEN", ""),
 	}
 
 	if err := cfg.validate(); err != nil {
