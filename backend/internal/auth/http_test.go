@@ -67,7 +67,7 @@ func (f *fakeUsers) FindByID(_ context.Context, id string) (*users.User, error) 
 func newTestRouter(tokens Service, userSvc UserService) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	NewHandler(tokens, userSvc).RegisterRoutes(r.Group("/api/v1"))
+	NewHandler(tokens, userSvc, CookieConfig{}).RegisterRoutes(r.Group("/api/v1"))
 	return r
 }
 
@@ -243,5 +243,39 @@ func TestMeReturnsCurrentUser(t *testing.T) {
 	}
 	if me.ID != "u1" || me.Role != "staff" {
 		t.Fatalf("unexpected me response: %+v", me)
+	}
+}
+
+func TestRefreshCookieFlow(t *testing.T) {
+	email := "manager@example.com"
+	user := &users.User{ID: "u1", Name: "Manager", Email: &email, Role: users.RoleManager, Status: users.StatusActive}
+	tokens := &fakeTokens{
+		pair:      TokenPair{AccessToken: "access", RefreshToken: "refresh-1", ExpiresIn: 900},
+		consumeID: "u1",
+	}
+	userSvc := &fakeUsers{authUser: user, byID: map[string]*users.User{"u1": user}}
+	r := newTestRouter(tokens, userSvc)
+
+	// Login sets the httpOnly refresh cookie.
+	w := perform(r, http.MethodPost, "/api/v1/auth/login", `{"email":"manager@example.com","password":"pw"}`, "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("login: expected 200, got %d", w.Code)
+	}
+	cookies := w.Result().Cookies()
+	if len(cookies) == 0 || cookies[0].Name != DefaultRefreshCookie {
+		t.Fatalf("expected %s cookie, got %+v", DefaultRefreshCookie, cookies)
+	}
+	refreshCookie := cookies[0]
+
+	// Refresh works from the cookie alone, with no request body.
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/refresh", strings.NewReader(""))
+	req.AddCookie(refreshCookie)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("refresh: expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if picked := rec.Result().Cookies(); len(picked) == 0 || picked[0].Name != DefaultRefreshCookie {
+		t.Fatalf("expected rotated refresh cookie, got %+v", picked)
 	}
 }

@@ -91,7 +91,11 @@ func (s *Server) registerRoutes() {
 	v1 := s.gin.Group("/api/v1")
 	v1.GET("/health", s.handleHealth)
 
-	auth.NewHandler(s.auth, s.users).RegisterRoutes(v1)
+	auth.NewHandler(s.auth, s.users, auth.CookieConfig{
+		Secure:   s.cfg.IsProduction(),
+		MaxAge:   int(s.cfg.RefreshTokenTTL.Seconds()),
+		SameSite: http.SameSiteLaxMode,
+	}).RegisterRoutes(v1)
 	staff.NewHandler(s.staff, s.auth).RegisterRoutes(v1)
 	drivers.NewHandler(s.drivers, s.auth).RegisterRoutes(v1)
 	vehicles.NewHandler(s.vehicles, s.auth).RegisterRoutes(v1)

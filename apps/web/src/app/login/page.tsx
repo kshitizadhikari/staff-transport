@@ -15,14 +15,18 @@ import {
 import { useAuth } from "@/lib/auth";
 
 export default function LoginPage() {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isInitializing } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
-    if (isAuthenticated) {
+    if (!isInitializing && isAuthenticated) {
       router.replace("/");
     }
-  }, [isAuthenticated, router]);
+  }, [isInitializing, isAuthenticated, router]);
+
+  if (isInitializing) {
+    return null;
+  }
 
   return (
     <main className="relative flex min-h-screen items-center justify-center px-6 py-16">

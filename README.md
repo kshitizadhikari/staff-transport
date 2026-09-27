@@ -285,6 +285,8 @@ Implemented so far:
 - authentication API: `POST /api/v1/auth/login`, `/refresh`, `/logout`, `GET /api/v1/me`
 - local seeding via `make seed` (manager, ten staff, ten drivers, ten vehicles)
 - web login screen, authenticated home, and CORS support for the web origin
+- persistent web sessions: login sets an httpOnly refresh cookie that is rotated
+  on use, so a page reload keeps the user signed in
 - web app light/dark theme toggle (persisted, defaults to the system preference)
 - manager directory & fleet API (manager-only):
   - `GET/POST /api/v1/staff`, `GET/PATCH/DELETE /api/v1/staff/:id`
@@ -329,8 +331,8 @@ Implemented so far:
 
 Known limitations:
 
-- web and mobile sessions live in memory, so a reload/restart requires signing in
-  again
+- the driver mobile session lives in memory, so restarting the app requires
+  signing in again (the web app persists via an httpOnly refresh cookie)
 - trip stops cannot be replaced after creation (cancel and recreate); driver and
   vehicle double-booking detection and geocoded stop coordinates are not
   implemented yet

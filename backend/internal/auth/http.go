@@ -4,12 +4,29 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
 	"staff-transport/internal/httpx"
 	"staff-transport/internal/users"
 )
+
+// DefaultRefreshCookie is the cookie that carries the web refresh token.
+const DefaultRefreshCookie = "st_refresh"
+
+// SessionHintCookie is a readable companion cookie that lets the browser know a
+// session may exist without exposing the refresh token. It is not a credential.
+const SessionHintCookie = "st_session"
+
+// CookieConfig controls the refresh-token cookie used by browser clients. The
+// mobile app continues to use the token returned in the response body.
+type CookieConfig struct {
+	Name     string
+	Secure   bool
+	MaxAge   int
+	SameSite http.SameSite
+}
 
 // UserService is the subset of the users module needed for authentication.
 type UserService interface {
@@ -21,11 +38,21 @@ type UserService interface {
 type Handler struct {
 	tokens Service
 	users  UserService
+	cookie CookieConfig
 }
 
 // NewHandler returns an authentication handler.
-func NewHandler(tokens Service, userSvc UserService) *Handler {
-	return &Handler{tokens: tokens, users: userSvc}
+func NewHandler(tokens Service, userSvc UserService, cookie CookieConfig) *Handler {
+	if cookie.Name == "" {
+		cookie.Name = DefaultRefreshCookie
+	}
+	if cookie.MaxAge <= 0 {
+		cookie.MaxAge = 7 * 24 * 60 * 60
+	}
+	if cookie.SameSite == 0 {
+		cookie.SameSite = http.SameSiteLaxMode
+	}
+	return &Handler{tokens: tokens, users: userSvc, cookie: cookie}
 }
 
 type loginRequest struct {
@@ -34,7 +61,7 @@ type loginRequest struct {
 }
 
 type refreshRequest struct {
-	RefreshToken string `json:"refresh_token" binding:"required"`
+	RefreshToken string `json:"refresh_token"`
 }
 
 type logoutRequest struct {
@@ -86,19 +113,24 @@ func (h *Handler) login(c *gin.Context) {
 		httpx.Internal(c, err)
 		return
 	}
+	h.setRefreshCookie(c, pair.RefreshToken)
 	c.JSON(http.StatusOK, pair)
 }
 
 func (h *Handler) refresh(c *gin.Context) {
 	var req refreshRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	_ = c.ShouldBindJSON(&req)
+
+	token := h.refreshToken(c, req.RefreshToken)
+	if token == "" {
 		httpx.BadRequest(c, "VALIDATION_ERROR", "refresh_token is required.")
 		return
 	}
 
-	userID, err := h.tokens.ConsumeRefresh(c.Request.Context(), req.RefreshToken)
+	userID, err := h.tokens.ConsumeRefresh(c.Request.Context(), token)
 	if err != nil {
 		if errors.Is(err, ErrInvalidToken) {
+			h.clearRefreshCookie(c)
 			httpx.Unauthorized(c, "INVALID_REFRESH_TOKEN", "The refresh token is invalid or expired.")
 			return
 		}
@@ -109,6 +141,7 @@ func (h *Handler) refresh(c *gin.Context) {
 	user, err := h.users.FindByID(c.Request.Context(), userID)
 	if err != nil {
 		if errors.Is(err, users.ErrNotFound) {
+			h.clearRefreshCookie(c)
 			httpx.Unauthorized(c, "INVALID_REFRESH_TOKEN", "The refresh token is invalid or expired.")
 			return
 		}
@@ -125,6 +158,7 @@ func (h *Handler) refresh(c *gin.Context) {
 		httpx.Internal(c, err)
 		return
 	}
+	h.setRefreshCookie(c, pair.RefreshToken)
 	c.JSON(http.StatusOK, pair)
 }
 
@@ -132,11 +166,64 @@ func (h *Handler) logout(c *gin.Context) {
 	var req logoutRequest
 	_ = c.ShouldBindJSON(&req)
 
-	if err := h.tokens.Revoke(c.Request.Context(), req.RefreshToken); err != nil {
+	if err := h.tokens.Revoke(c.Request.Context(), h.refreshToken(c, req.RefreshToken)); err != nil {
 		httpx.Internal(c, err)
 		return
 	}
+	h.clearRefreshCookie(c)
 	c.Status(http.StatusNoContent)
+}
+
+func (h *Handler) refreshToken(c *gin.Context, bodyToken string) string {
+	if strings.TrimSpace(bodyToken) != "" {
+		return bodyToken
+	}
+	if cookie, err := c.Cookie(h.cookie.Name); err == nil {
+		return cookie
+	}
+	return ""
+}
+
+func (h *Handler) setRefreshCookie(c *gin.Context, token string) {
+	cookies := []*http.Cookie{
+		{
+			Name:     h.cookie.Name,
+			Value:    token,
+			Path:     "/",
+			HttpOnly: true,
+			Secure:   h.cookie.Secure,
+			SameSite: h.cookie.SameSite,
+			MaxAge:   h.cookie.MaxAge,
+		},
+		{
+			// Readable by the app so it only attempts a token refresh when a
+			// session might exist.
+			Name:     SessionHintCookie,
+			Value:    "1",
+			Path:     "/",
+			HttpOnly: false,
+			Secure:   h.cookie.Secure,
+			SameSite: h.cookie.SameSite,
+			MaxAge:   h.cookie.MaxAge,
+		},
+	}
+	for _, cookie := range cookies {
+		http.SetCookie(c.Writer, cookie)
+	}
+}
+
+func (h *Handler) clearRefreshCookie(c *gin.Context) {
+	for _, name := range []string{h.cookie.Name, SessionHintCookie} {
+		http.SetCookie(c.Writer, &http.Cookie{
+			Name:     name,
+			Value:    "",
+			Path:     "/",
+			HttpOnly: name == h.cookie.Name,
+			Secure:   h.cookie.Secure,
+			SameSite: h.cookie.SameSite,
+			MaxAge:   -1,
+		})
+	}
 }
 
 func (h *Handler) me(c *gin.Context) {
