@@ -313,6 +313,10 @@ Implemented so far:
   of samples for an active (or just-completed) trip, assigned driver only;
   telemetry is append-only, deduplicated by device timestamp, and tolerant of
   delayed or out-of-order uploads
+- notifications: device push tokens (`POST /api/v1/me/push-tokens`) and an in-app
+  feed (`GET /api/v1/me/notifications`); trip assignment and cancellation enqueue
+  Asynq jobs delivered via an Expo push provider in the worker (migration
+  `0002_push_tokens`)
 
 Known limitations:
 
@@ -321,8 +325,9 @@ Known limitations:
 - trip stops cannot be replaced after creation (cancel and recreate); driver and
   vehicle double-booking detection and geocoded stop coordinates are not
   implemented yet
-- push notifications and driver-mobile location capture are not implemented yet
+- driver-mobile location capture and push-token registration are not implemented
+  yet (the backend endpoints exist)
 - persistent sessions (httpOnly refresh cookie) and the driver mobile auth flow
   are not implemented yet
 
-Next: push notifications, then recurring schedules and event transport.
+Next: recurring schedules and event transport.

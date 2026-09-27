@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 
 	"staff-transport/internal/audit"
 	"staff-transport/internal/drivers"
+	"staff-transport/internal/notifications"
 	"staff-transport/internal/staff"
 	"staff-transport/internal/users"
 	"staff-transport/internal/vehicles"
@@ -890,19 +892,26 @@ type StaffReader interface {
 	FindByUserID(ctx context.Context, userID string) (*staff.Staff, error)
 }
 
+// Notifier records and dispatches user notifications. It is optional; when nil,
+// notification attempts are skipped so they can never block trip operations.
+type Notifier interface {
+	NotifyUsers(ctx context.Context, userIDs []string, typ string, payload map[string]any) error
+}
+
 // Service holds trip business behavior.
 type Service struct {
 	repo     Repository
 	drivers  DriverReader
 	vehicles VehicleReader
 	staff    StaffReader
+	notifier Notifier
 	orgTZ    string
 }
 
 // NewService returns a trip service. orgTZ is the organization timezone used
 // for date filtering and user-facing scheduling.
-func NewService(repo Repository, driverSvc DriverReader, vehicleSvc VehicleReader, staffSvc StaffReader, orgTZ string) *Service {
-	return &Service{repo: repo, drivers: driverSvc, vehicles: vehicleSvc, staff: staffSvc, orgTZ: orgTZ}
+func NewService(repo Repository, driverSvc DriverReader, vehicleSvc VehicleReader, staffSvc StaffReader, notifier Notifier, orgTZ string) *Service {
+	return &Service{repo: repo, drivers: driverSvc, vehicles: vehicleSvc, staff: staffSvc, notifier: notifier, orgTZ: orgTZ}
 }
 
 // List returns a page of trips. When date is provided it is interpreted in the
@@ -967,7 +976,12 @@ func (s *Service) Create(ctx context.Context, in CreateInput, actorID string) (*
 		}
 	}
 
-	return s.repo.Create(ctx, in, statusFor(in.DriverID, in.VehicleID), actorID)
+	created, err := s.repo.Create(ctx, in, statusFor(in.DriverID, in.VehicleID), actorID)
+	if err != nil {
+		return nil, err
+	}
+	s.notifyAssignees(ctx, created)
+	return created, nil
 }
 
 // Update applies a partial update to a trip.
@@ -1025,7 +1039,14 @@ func (s *Service) Update(ctx context.Context, id string, in UpdateInput, actorID
 		vehicleID = newVehicle
 	}
 
-	return s.repo.Update(ctx, id, in, statusFor(driverID, vehicleID), actorID)
+	updated, err := s.repo.Update(ctx, id, in, statusFor(driverID, vehicleID), actorID)
+	if err != nil {
+		return nil, err
+	}
+	if updated.DriverID != nil && (existing.DriverID == nil || *existing.DriverID != *updated.DriverID) {
+		s.notify(ctx, []string{s.driverUserID(ctx, *updated.DriverID)}, notifications.TypeTripAssigned, map[string]any{"trip_id": updated.ID})
+	}
+	return updated, nil
 }
 
 // Cancel cancels a trip unless it is already completed or cancelled.
@@ -1040,7 +1061,54 @@ func (s *Service) Cancel(ctx context.Context, id, actorID string) error {
 	if existing.Status == StatusCancelled {
 		return nil
 	}
-	return s.repo.Cancel(ctx, id, actorID)
+	if err := s.repo.Cancel(ctx, id, actorID); err != nil {
+		return err
+	}
+	users := make([]string, 0, len(existing.Passengers)+1)
+	if existing.DriverID != nil {
+		users = append(users, s.driverUserID(ctx, *existing.DriverID))
+	}
+	users = append(users, s.passengerUserIDs(ctx, existing.Passengers)...)
+	s.notify(ctx, users, notifications.TypeTripCancelled, map[string]any{"trip_id": id})
+	return nil
+}
+
+func (s *Service) notifyAssignees(ctx context.Context, trip *Trip) {
+	users := make([]string, 0, len(trip.Passengers)+1)
+	if trip.DriverID != nil {
+		users = append(users, s.driverUserID(ctx, *trip.DriverID))
+	}
+	users = append(users, s.passengerUserIDs(ctx, trip.Passengers)...)
+	s.notify(ctx, users, notifications.TypeTripAssigned, map[string]any{"trip_id": trip.ID})
+}
+
+func (s *Service) notify(ctx context.Context, userIDs []string, typ string, payload map[string]any) {
+	if s.notifier == nil || len(userIDs) == 0 {
+		return
+	}
+	if err := s.notifier.NotifyUsers(ctx, userIDs, typ, payload); err != nil {
+		slog.Error("notification dispatch failed", "type", typ, "error", err)
+	}
+}
+
+func (s *Service) driverUserID(ctx context.Context, driverID string) string {
+	driver, err := s.drivers.Get(ctx, driverID)
+	if err != nil {
+		return ""
+	}
+	return driver.UserID
+}
+
+func (s *Service) passengerUserIDs(ctx context.Context, passengers []Passenger) []string {
+	out := make([]string, 0, len(passengers))
+	for _, passenger := range passengers {
+		member, err := s.staff.Get(ctx, passenger.StaffID)
+		if err != nil {
+			continue
+		}
+		out = append(out, member.UserID)
+	}
+	return out
 }
 
 // MyTrips returns the caller's own transportation: trips assigned to them as a

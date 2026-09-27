@@ -10,11 +10,14 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/hibiken/asynq"
+
 	"staff-transport/internal/auth"
 	"staff-transport/internal/config"
 	"staff-transport/internal/db"
 	"staff-transport/internal/drivers"
 	"staff-transport/internal/locations"
+	"staff-transport/internal/notifications"
 	"staff-transport/internal/redis"
 	"staff-transport/internal/server"
 	"staff-transport/internal/staff"
@@ -52,20 +55,34 @@ func run() error {
 	staffSvc := staff.NewService(staff.NewRepository(gdb))
 	driverSvc := drivers.NewService(drivers.NewRepository(gdb))
 	vehicleSvc := vehicles.NewService(vehicles.NewRepository(gdb))
-	tripSvc := trips.NewService(trips.NewRepository(gdb), driverSvc, vehicleSvc, staffSvc, cfg.OrgTimezone)
+
+	asynqOpt, err := redis.AsynqOpt(cfg.RedisURL)
+	if err != nil {
+		return err
+	}
+	asynqClient := asynq.NewClient(asynqOpt)
+	defer asynqClient.Close()
+
+	notifSvc := notifications.NewService(
+		notifications.NewRepository(gdb),
+		notifications.NewExpoSender(cfg.ExpoAccessToken),
+		asynqClient,
+	)
+	tripSvc := trips.NewService(trips.NewRepository(gdb), driverSvc, vehicleSvc, staffSvc, notifSvc, cfg.OrgTimezone)
 	locationSvc := locations.NewService(locations.NewRepository(gdb), tripSvc)
 
 	srv := server.New(server.Dependencies{
-		Config:    cfg,
-		DB:        gdb,
-		Redis:     rdb,
-		Auth:      auth.NewService(cfg, rdb),
-		Users:     users.NewService(users.NewRepository(gdb)),
-		Staff:     staffSvc,
-		Drivers:   driverSvc,
-		Vehicles:  vehicleSvc,
-		Trips:     tripSvc,
-		Locations: locationSvc,
+		Config:        cfg,
+		DB:            gdb,
+		Redis:         rdb,
+		Auth:          auth.NewService(cfg, rdb),
+		Users:         users.NewService(users.NewRepository(gdb)),
+		Staff:         staffSvc,
+		Drivers:       driverSvc,
+		Vehicles:      vehicleSvc,
+		Trips:         tripSvc,
+		Locations:     locationSvc,
+		Notifications: notifSvc,
 	})
 
 	httpServer := &http.Server{

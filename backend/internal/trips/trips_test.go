@@ -236,7 +236,7 @@ func (f fakeStaff) FindByUserID(_ context.Context, userID string) (*staff.Staff,
 func ptr(s string) *string { return &s }
 
 func newService(repo Repository, d fakeDrivers, v fakeVehicles, s fakeStaff) *Service {
-	return NewService(repo, d, v, s, "UTC")
+	return NewService(repo, d, v, s, nil, "UTC")
 }
 
 func validCreate() CreateInput {
@@ -463,6 +463,7 @@ func executionService(repo *fakeRepo) *Service {
 		fakeDrivers{id: "d1", userID: "driver-user", status: drivers.StatusAvailable},
 		fakeVehicles{capacity: 4, status: vehicles.StatusAvailable},
 		fakeStaff{id: "s1", userID: "staff-user", active: true},
+		nil,
 		"UTC")
 }
 
