@@ -1,22 +1,22 @@
 # AGENTS.md
 
-This file is the primary instruction set for coding agents working in this repository.
+Primary instructions for coding agents working in this repository.
 
 ## 1. Project Context
 
-This repository contains a staff transportation management platform.
+This repository contains a staff transportation management platform with three roles:
 
-There are three roles:
+* `manager`: plans and operates transportation
+* `driver`: executes assigned trips through the mobile app
+* `staff`: views assigned transportation and receives updates
 
-- `manager`: plans and operates transportation
-- `driver`: executes assigned trips from a mobile application
-- `staff`: views assigned transportation and receives updates
+This is an internal staff transportation system, not a public ride-hailing marketplace.
 
-The system is not a public ride-hailing marketplace.
+---
 
 ## 2. Source of Truth
 
-Before making implementation decisions, read these files in order:
+Use these documents as the authoritative project references:
 
 1. `README.md`
 2. `docs/PRODUCT_REQUIREMENTS.md`
@@ -26,7 +26,11 @@ Before making implementation decisions, read these files in order:
 6. `docs/DEVELOPMENT.md`
 7. `docs/DECISIONS.md`
 
-When product requirements and implementation preferences conflict, preserve the documented product behavior and point out the conflict.
+Read the documents relevant to the task before making implementation decisions. For architectural, product, or cross-cutting changes, inspect all relevant source-of-truth documents.
+
+When documented product behavior conflicts with an implementation preference, preserve the documented behavior and explicitly flag the conflict.
+
+---
 
 ## 3. Technology Rules
 
@@ -34,56 +38,75 @@ When product requirements and implementation preferences conflict, preserve the 
 
 Use:
 
-- Next.js
-- TypeScript
-- Tailwind CSS
-- shadcn/ui
-- TanStack Query
-- React Hook Form
-- Zod
+* Next.js
+* TypeScript
+* Tailwind CSS
+* shadcn/ui
+* TanStack Query
+* React Hook Form
+* Zod
 
-The web app is shared by manager and staff users. Hide features through authorization; do not rely on UI hiding alone for security.
+The web application is shared by manager and staff users.
+
+UI visibility is not authorization. All protected operations must be authorized on the server.
 
 ### Driver Mobile
 
 Use React Native with Expo.
 
-Driver functionality should assume:
+Assume:
 
-- intermittent connectivity
-- location permission can be denied
-- battery/background restrictions exist
-- network requests can fail or be delayed
+* intermittent connectivity
+* denied location permissions
+* battery/background restrictions
+* delayed requests
+* failed requests
+
+The driver workflow must remain usable under these conditions.
 
 ### Backend
 
-Use Go with Gin, GORM, PostgreSQL/PostGIS, Redis, and Asynq.
+Use:
 
-Keep the backend a modular monolith.
+* Go
+* Gin
+* GORM
+* PostgreSQL
+* PostGIS
+* Redis
+* Asynq
 
-Do not introduce microservices without a concrete requirement documented in an ADR or issue.
+Use a modular monolith.
+
+Do not introduce microservices unless there is a concrete documented requirement, ADR, or issue supporting the change.
+
+---
 
 ## 4. Domain Rules
 
-### Trip is the main operational entity
+### Trips
 
-Do not create separate domain implementations for every transport scenario such as `morning_pickup_service`, `event_transport_service`, and `home_drop_service`.
+Trip is the primary operational entity.
 
-Use one trip model with a type and related stops/passengers.
+Use one trip model with:
 
-### Stops are ordered
+* trip type
+* ordered stops
+* passengers
+* driver/vehicle assignments
+* execution state
 
-A trip can contain multiple stops. Stop order must be explicit and persisted.
+Do not create separate domain implementations for scenarios such as morning pickup, event transport, and home drop.
 
-### Passengers belong to trips through an association
+Stop order must be explicit and persisted.
 
-Never store a single `staff_id` directly on a trip when representing passengers.
+### Passengers
 
-Use a trip-passenger relationship.
+Passengers belong to trips through a trip-passenger association.
 
-### Execution state must be explicit
+Do not represent trip passengers using a single `staff_id` directly on the trip.
 
-At minimum support:
+### Trip States
 
 ```text
 scheduled
@@ -93,9 +116,7 @@ completed
 cancelled
 ```
 
-Passenger execution state should be separate from overall trip state.
-
-At minimum support:
+### Passenger States
 
 ```text
 assigned
@@ -105,122 +126,155 @@ completed
 cancelled
 ```
 
-### Audit important state changes
+Passenger execution state must remain separate from overall trip state.
 
-At minimum audit:
+### Audit
 
-- trip creation/update/cancellation
-- driver assignment changes
-- vehicle assignment changes
-- passenger assignment/removal
-- passenger pickup/no-show status
-- trip start/completion
-- relevant permission or role changes
+Audit important state changes, including:
+
+* trip creation, update, and cancellation
+* driver assignment changes
+* vehicle assignment changes
+* passenger assignment/removal
+* passenger pickup/no-show status
+* trip start/completion
+* relevant role or permission changes
+
+---
 
 ## 5. Security Rules
 
-Never trust client-supplied role, owner, driver, or passenger IDs.
+Never trust client-supplied:
+
+* role IDs
+* owner IDs
+* driver IDs
+* passenger IDs
+* other authorization-sensitive identifiers
 
 Every protected mutation must authorize the acting user on the server.
 
 Protect:
 
-- passwords/credentials
-- refresh tokens
-- home addresses
-- precise staff locations
-- precise driver locations
-- driver license information
-- vehicle documents
+* passwords and credentials
+* refresh tokens
+* home addresses
+* precise staff locations
+* precise driver locations
+* driver-license information
+* vehicle documents
 
-Do not log tokens, passwords, or unnecessary precise location data.
+Never log passwords or tokens.
 
-Validate request bodies at the API boundary.
+Do not log unnecessary precise location data.
 
-Use parameterized queries / ORM parameter binding. Never construct SQL from raw untrusted strings.
+Validate request bodies at API boundaries.
+
+Use parameterized queries or ORM parameter binding. Never construct SQL from untrusted input.
+
+Client-side authorization and validation are not security controls.
+
+---
 
 ## 6. API Rules
 
 Follow `docs/API_CONVENTIONS.md`.
 
-Use resource-oriented endpoints, consistent error responses, pagination for collections, and explicit authorization.
+APIs should use:
 
-Do not expose database entities directly as API contracts. Define request/response DTOs.
+* resource-oriented endpoints
+* consistent error responses
+* pagination for collections
+* explicit authorization
+* request/response DTOs
+
+Do not expose database entities directly as API contracts.
+
+Keep business rules and authoritative state in backend services where practical.
+
+---
 
 ## 7. Database Rules
 
 PostgreSQL is the source of truth.
 
-Use migrations for schema changes.
+* All schema changes require migrations.
+* Never manually mutate production schema.
+* Use transactions when a business operation updates multiple related records and partial completion could create invalid state.
+* Use PostGIS for geographic data.
+* Store a human-readable address and coordinates when a location is geocoded.
+* Preserve historical trip-stop addresses as snapshots when historical accuracy matters.
+* Never assume a staff member's current home address is the historical pickup address for an old trip.
 
-Do not manually mutate production schema.
+---
 
-Use transactions when a business operation updates multiple related records and partial completion would create invalid operational state.
+## 8. Location Tracking
 
-Use PostGIS for geographic data rather than storing only string addresses.
+Location tracking must have an operational purpose.
 
-Store both:
+For the MVP:
 
-- human-readable address
-- coordinates when the location is geocoded
+* enable location updates during an active trip
+* use coarse/periodic updates rather than excessive frequency
+* handle denied permissions cleanly
+* tolerate delayed and out-of-order updates
+* record server timestamps
 
-Keep address snapshots on trip stops when historical accuracy matters. Do not assume a staff member's current home address is the historical pickup location for an old trip.
+Treat location events as append-only or immutable telemetry where practical.
 
-## 8. Location Tracking Rules
+Derive current state from telemetry rather than rewriting historical events.
 
-Location tracking is only necessary for operational use cases.
-
-Do not continuously track a driver when there is no operational reason.
-
-For MVP:
-
-- enable location updates during an active trip
-- send coarse/periodic updates rather than excessive frequency
-- handle missing permissions cleanly
-- tolerate delayed/out-of-order updates
-- record a server timestamp
-
-Treat location events as append-only or immutable telemetry where practical; derive current state from them rather than rewriting historical events.
+---
 
 ## 9. Frontend Rules
 
-Keep business rules in shared backend APIs where possible.
+Backend APIs remain authoritative for business rules, permissions, and state.
 
-Client-side validation improves UX but is not security.
+Client-side validation exists for UX and does not replace server validation.
 
-Prefer server-side authorization and authoritative state.
+### Manager UI
 
-For manager screens, favor operational clarity:
+Prioritize operational clarity:
 
-- filters
-- statuses
-- search
-- compact tables
-- clear actions
-- error states
-- empty states
-- confirmation for destructive operations
+* filters
+* search
+* statuses
+* compact tables
+* clear actions
+* loading states
+* empty states
+* actionable error states
+* confirmation for destructive operations
 
-For the driver app, favor:
+### Driver UI
 
-- large touch targets
-- minimal steps
-- clear current stop
-- obvious trip state
-- navigation action
-- retry behavior
+Prioritize:
 
-Do not overload the driver UI with manager functionality.
+* large touch targets
+* minimal steps
+* clear current stop
+* obvious trip state
+* navigation action
+* retry behavior
 
-## 10. Error Handling
+Do not overload the driver workflow with manager functionality.
 
-Errors should be actionable.
+---
 
-Never swallow API, database, or background-job errors silently.
+## 10. Error Handling and Observability
 
-User-facing messages should explain what failed without leaking internal details.
+Never silently swallow:
 
-Backend logs should contain structured context useful for diagnosis.
+* API errors
+* database errors
+* background-job errors
+* external-service failures
+
+User-facing errors should be actionable without exposing internal implementation details.
+
+Backend logs should be structured and contain sufficient context for diagnosis.
+
+---
 
 ## 11. Testing Rules
 
@@ -228,119 +282,187 @@ New backend business logic should have unit tests.
 
 New API behavior should have integration tests where practical.
 
-Important workflows must have end-to-end coverage over time, especially:
+Important workflows should progressively receive end-to-end coverage, especially:
 
 1. manager creates trip
-2. manager assigns driver/vehicle/passengers
+2. manager assigns driver, vehicle, and passengers
 3. driver starts trip
 4. driver records passenger outcome
 5. driver completes trip
 6. staff sees updated status
 
-Do not write tests that only restate framework behavior.
+Do not write tests that merely restate framework behavior.
+
+---
 
 ## 12. Background Jobs
 
 Use Asynq for:
 
-- scheduled notifications
-- recurring-trip generation
-- retryable external-service work
-- other non-blocking background tasks
+* scheduled notifications
+* recurring-trip generation
+* retryable external-service work
+* other non-blocking background work
 
 Background jobs must be safe to retry.
 
-Prefer idempotency keys or unique business identifiers where duplicate execution could create duplicate trips or notifications.
+Use idempotency keys or unique business identifiers when duplicate execution could create duplicate trips, notifications, or other side effects.
 
-## 13. External APIs
+---
 
-Wrap external providers behind interfaces/modules.
+## 13. External Services
 
-Do not spread Google Maps or notification-provider calls throughout domain code.
+Wrap external providers behind interfaces or dedicated modules.
 
-Example:
+Do not spread provider-specific calls throughout domain code.
+
+Examples:
 
 ```text
 internal/maps/
 internal/notifications/
 ```
 
-This makes provider replacement and testing easier.
+This keeps external-provider logic replaceable and testable.
 
-## 14. Change Discipline
+---
 
-Before changing an existing module:
+## 14. Time and Scheduling
 
-1. inspect related handlers/services/repositories
-2. inspect existing tests
-3. inspect database migrations
-4. identify API compatibility impact
-5. make the smallest coherent change
-6. add/update tests
-7. run relevant checks
+Transportation scheduling requires explicit timezone handling.
+
+* Store timestamps in UTC at the database/API boundary where appropriate.
+* Represent the organization's configured timezone explicitly.
+* Use the configured timezone for recurring schedules and user-facing times.
+* Never implicitly rely on the server's local timezone.
+
+---
+
+## 15. Change Discipline
+
+Before modifying an existing module:
+
+1. inspect related handlers, services, and repositories
+2. inspect relevant tests
+3. inspect relevant database migrations
+4. check API compatibility
+5. identify affected domain behavior
+6. make the smallest coherent change
+7. add or update tests
+8. run relevant validation
 
 Do not perform broad refactors while implementing an unrelated feature.
 
-## 15. Definition of Done
-
-A feature is not complete when the happy-path code compiles.
-
-Consider it complete only when applicable:
-
-- authorization exists
-- validation exists
-- error handling exists
-- loading/empty/error UI states exist
-- database migration exists
-- tests exist
-- API contract is documented
-- audit behavior is implemented
-- observability/logging is sufficient
-- local setup still works
+---
 
 ## 16. Agent Workflow
 
-For each feature:
+### Step A — Understand
 
-### Step A: Understand
+Identify:
 
-Identify affected domain entities, user role, API endpoints, UI screens, and data changes.
+* affected domain entities
+* affected user roles
+* API endpoints
+* UI screens
+* database changes
+* external services
+* authorization requirements
 
-### Step B: Plan
+Read only the relevant source-of-truth documents and code needed to understand the task.
 
-State a small implementation plan before editing multiple files.
+### Step B — Plan
 
-### Step C: Implement
+Before editing multiple files, state a concise implementation plan.
 
-Implement backend/data changes before depending on them in the UI unless the task specifically requires the opposite.
+Keep the plan proportional to the task.
 
-### Step D: Validate
+### Step C — Implement
 
-Run formatting, tests, type checks, linting, and build checks relevant to the changed components.
+Prefer backend and data changes before depending on them in the UI, unless the task specifically requires the opposite.
 
-### Step E: Review
+Keep changes focused and minimal.
 
-Check authorization, duplicate execution, race conditions, timezone handling, failure paths, and historical-data correctness.
+### Step D — Validate
 
-## 17. Time and Scheduling
+Run relevant:
 
-The business involves scheduled transportation, so timezone handling is important.
+* formatters
+* unit tests
+* integration tests
+* type checks
+* linters
+* builds
 
-Store timestamps in UTC at the database/API boundary where appropriate.
+Do not run unrelated expensive checks unless required.
 
-Represent the organization's configured timezone explicitly for recurring schedules and user-facing times.
+### Step E — Review
 
-Never rely on the server's local timezone implicitly.
+Before considering the task complete, check applicable:
+
+* authorization
+* validation
+* duplicate execution
+* race conditions
+* transaction boundaries
+* timezone handling
+* failure paths
+* historical-data correctness
+* API compatibility
+
+---
+
+## 17. Definition of Done
+
+A feature is not complete merely because it compiles.
+
+For applicable changes, verify:
+
+* authorization exists
+* validation exists
+* error handling exists
+* loading/empty/error UI states exist
+* required database migration exists
+* tests exist
+* API contract is documented
+* required audit behavior exists
+* logging/observability is sufficient
+* local development setup still works
+
+Do not add unnecessary ceremony when a requirement is not applicable to the change.
+
+---
 
 ## 18. What Not to Do
 
 Do not:
 
-- introduce microservices prematurely
-- duplicate business rules in frontend and backend
-- store passwords in plain text
-- trust client authorization claims without server verification
-- silently ignore failed notifications/jobs
-- overwrite historical trip stop addresses without preserving history
-- build a custom map/routing engine
-- add technology because it sounds scalable rather than because the current workload needs it
+* introduce microservices prematurely
+* duplicate business rules between frontend and backend
+* store passwords in plaintext
+* trust client authorization claims without server verification
+* silently ignore failed jobs or notifications
+* overwrite historical trip-stop addresses without preserving required history
+* build a custom map/routing engine
+* add technology without a concrete requirement
+* modify unrelated files
+* perform broad refactors for unrelated tasks
+* introduce dependencies without justification
+* change established architecture without checking the project documentation
+
+---
+
+## 19. Agent Efficiency
+
+Optimize for focused context and minimal unnecessary work.
+
+* Read only relevant files after understanding the task.
+* Prefer targeted searches over reading entire directories.
+* Avoid dumping entire files into responses.
+* Avoid repeating information already available in the repository.
+* Keep generated explanations concise unless detailed explanation is requested.
+* Make the smallest coherent diff.
+* Do not modify unrelated files.
+* Run only validation relevant to the changed components.
+* Avoid unnecessary tool calls, builds, and repeated tests.
+* Stop when the requested task is implemented and relevant validation passes.
