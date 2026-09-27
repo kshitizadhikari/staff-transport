@@ -603,3 +603,28 @@ func TestExecutionRoutesAuthorization(t *testing.T) {
 		t.Fatalf("expected 200 for /me/trips, got %d", w.Code)
 	}
 }
+
+func TestMyTripAuthorizes(t *testing.T) {
+	repo := newFakeRepo(&Trip{
+		ID:         "t1",
+		DriverID:   ptr("d1"),
+		Passengers: []Passenger{{ID: "p1", StaffID: "s1"}},
+	})
+	svc := executionService(repo)
+	ctx := context.Background()
+
+	if _, err := svc.MyTrip(ctx, "driver-user", "driver", "t1"); err != nil {
+		t.Fatalf("assigned driver should see trip: %v", err)
+	}
+	if _, err := svc.MyTrip(ctx, "staff-user", "staff", "t1"); err != nil {
+		t.Fatalf("assigned passenger should see trip: %v", err)
+	}
+	if _, err := svc.MyTrip(ctx, "m1", "manager", "t1"); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("expected ErrForbidden for manager, got %v", err)
+	}
+
+	other := newFakeRepo(&Trip{ID: "t2", DriverID: ptr("d2")})
+	if _, err := executionService(other).MyTrip(ctx, "driver-user", "driver", "t2"); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("expected ErrForbidden for other driver, got %v", err)
+	}
+}

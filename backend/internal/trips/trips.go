@@ -1082,6 +1082,45 @@ func (s *Service) MyTrips(ctx context.Context, userID, role string, f ListFilter
 	}
 }
 
+// MyTrip returns a single trip the caller may see: their assigned trip as a
+// driver, or one of their trips as a passenger.
+func (s *Service) MyTrip(ctx context.Context, userID, role, tripID string) (*Trip, error) {
+	trip, err := s.repo.Get(ctx, tripID)
+	if err != nil {
+		return nil, err
+	}
+	switch role {
+	case string(users.RoleDriver):
+		driver, err := s.drivers.FindByUserID(ctx, userID)
+		if errors.Is(err, drivers.ErrNotFound) {
+			return nil, ErrForbidden
+		}
+		if err != nil {
+			return nil, err
+		}
+		if trip.DriverID == nil || *trip.DriverID != driver.ID {
+			return nil, ErrForbidden
+		}
+		return trip, nil
+	case string(users.RoleStaff):
+		member, err := s.staff.FindByUserID(ctx, userID)
+		if errors.Is(err, staff.ErrNotFound) {
+			return nil, ErrForbidden
+		}
+		if err != nil {
+			return nil, err
+		}
+		for _, p := range trip.Passengers {
+			if p.StaffID == member.ID {
+				return trip, nil
+			}
+		}
+		return nil, ErrForbidden
+	default:
+		return nil, ErrForbidden
+	}
+}
+
 // StartTrip begins execution of a trip the caller is assigned to.
 func (s *Service) StartTrip(ctx context.Context, tripID, userID string) (*Trip, error) {
 	if err := s.authorizeDriver(ctx, tripID, userID); err != nil {

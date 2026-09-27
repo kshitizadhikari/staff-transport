@@ -17,6 +17,7 @@ func (h *Handler) registerDriverExecution(rg *gin.RouterGroup) {
 	me := rg.Group("/me")
 	me.Use(auth.RequireAuth(h.auth))
 	me.GET("/trips", h.myTrips)
+	me.GET("/trips/:id", h.myTrip)
 
 	exec := rg.Group("/trips")
 	exec.Use(auth.RequireAuth(h.auth), auth.RequireRole(string(users.RoleDriver)))
@@ -54,6 +55,20 @@ func (h *Handler) myTrips(c *gin.Context) {
 		Data:       data,
 		Pagination: httpx.Pagination{Page: page, PageSize: pageSize, Total: total},
 	})
+}
+
+func (h *Handler) myTrip(c *gin.Context) {
+	claims, ok := auth.ClaimsFrom(c)
+	if !ok {
+		httpx.Unauthorized(c, "UNAUTHENTICATED", "Authentication is required.")
+		return
+	}
+	trip, err := h.svc.MyTrip(c.Request.Context(), claims.UserID, claims.Role, c.Param("id"))
+	if err != nil {
+		h.writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, toResponse(trip))
 }
 
 func (h *Handler) start(c *gin.Context) {
