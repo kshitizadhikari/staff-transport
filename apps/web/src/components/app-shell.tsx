@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { RequireAuth } from "@/components/require-auth";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
@@ -58,6 +59,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   {user?.role}
                 </p>
               </div>
+              <ThemeToggle />
               <Button variant="outline" size="sm" onClick={() => void logout()}>
                 Sign out
               </Button>

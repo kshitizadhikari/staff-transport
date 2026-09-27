@@ -285,6 +285,7 @@ Implemented so far:
 - authentication API: `POST /api/v1/auth/login`, `/refresh`, `/logout`, `GET /api/v1/me`
 - manager account seeding via `make seed-manager`
 - web login screen, authenticated home, and CORS support for the web origin
+- web app light/dark theme toggle (persisted, defaults to the system preference)
 - manager directory & fleet API (manager-only):
   - `GET/POST /api/v1/staff`, `GET/PATCH/DELETE /api/v1/staff/:id`
   - `GET/POST /api/v1/drivers`, `GET/PATCH/DELETE /api/v1/drivers/:id`

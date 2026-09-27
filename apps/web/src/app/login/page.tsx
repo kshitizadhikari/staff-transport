@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
 import { LoginForm } from "@/components/login-form";
+import { ThemeToggle } from "@/components/theme-toggle";
 import {
   Card,
   CardContent,
@@ -24,7 +25,10 @@ export default function LoginPage() {
   }, [isAuthenticated, router]);
 
   return (
-    <main className="flex min-h-screen items-center justify-center px-6 py-16">
+    <main className="relative flex min-h-screen items-center justify-center px-6 py-16">
+      <div className="absolute right-4 top-4">
+        <ThemeToggle />
+      </div>
       <Card className="w-full max-w-sm">
         <CardHeader>
           <CardTitle>Sign in</CardTitle>
